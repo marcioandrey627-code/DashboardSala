@@ -15,6 +15,10 @@ if "temperatura" not in st.session_state:
     st.session_state.temperatura = []
 if "ar_ligado" not in st.session_state:
     st.session_state.ar_ligado = False
+if "luz_ligada" not in st.session_state:
+    st.session_state.luz_ligada = False
+if "presenca" not in st.session_state:
+    st.session_state.presenca = []
 if len(st.session_state.temperatura) > 0:
     variacao = round(temperatura - st.session_state.temperatura[-1], 1)
 else:
@@ -38,27 +42,45 @@ with c4:
     with st.container(border=True):
         st.metric("Presença", "tem" if presenca else "Não tem")
 st.session_state.temperatura.append(temperatura)
+st.session_state.presenca.append(presenca)
 st.subheader("🌡️ Temperatura do ar-condicionado")
 st.caption("Atualizado em tempo real (dados simulados)") 
 if temperatura > 28:
     st.warning("Temperatura muito alta")
 else:
     st.success("Temperatura está boa")
-aba1, aba2 = st.tabs(["Sensores", "Controles"])
+aba1, aba2, aba3 = st.tabs(["Sensores", "Controles", "Verificação"])
 with aba1:
     st.subheader("Histórico de temperaturas")
     st.line_chart(st.session_state.temperatura)
 with aba2:
-    if st.button("Ligar/Desligar Ar-Condicionador"):
-        st.session_state.ar_ligado = not st.session_state.ar_ligado
-    st.write(
-        "Ar-Condicionador:",
-        "LIGADO" if st.session_state.ar_ligado else "DESLIGADO",
-    )
-    if st.button("Verificar temperatura"):
-        if temperatura > 28:
-            st.warning("Muito quente")
-        elif temperatura < 20:
-            st.info("Frio")
-        else:
-            st.success("Normal")
+    st.subheader("Controles da sala")
+    col_ar, col_luz = st.columns(2)
+with aba3:
+    st.subheader("Verificação de Pessoas")
+    tem_pessoas = st.session_state.presenca.count(True)
+    nao_tem_pessoas = st.session_state.presenca.count(False)
+    v1, v2 = st.columns(2)
+    v1.metric("Tem pessoas", tem_pessoas)
+    v2.metric("Não tem pessoas", nao_tem_pessoas)
+    st.table({"Presença": ["Sim" if p else "Não" for p in st.session_state.presenca]})
+    st.button("Atualizar verificação")
+with col_ar:
+        with st.container(border=True):
+            st.markdown("### ❄️ Ar-condicionado")
+            if st.button("Ligar/Desligar ar"):
+                st.session_state.ar_ligado = not st.session_state.ar_ligado
+            if st.session_state.ar_ligado:
+                st.success("🟢 LIGADO")
+            else:
+                st.info("⚫ DESLIGADO")
+ 
+with col_luz:
+        with st.container(border=True):
+            st.markdown("### 💡 Luz")
+            if st.button("Ligar/Desligar luz"):
+                st.session_state.luz_ligada = not st.session_state.luz_ligada
+            if st.session_state.luz_ligada:
+                st.success("🟢 LIGADA")
+            else:
+                st.info("⚫ DESLIGADA")
