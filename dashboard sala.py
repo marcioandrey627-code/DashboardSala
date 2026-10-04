@@ -11,14 +11,17 @@ def ler_sensores():
     presenca = random.choice([True, False])
     return temperatura, umidade, luminosidade, presenca
 temperatura, umidade, luminosidade, presenca = ler_sensores()
+def sortear_verifica_presenca():
+    st.session_state.verificar_presenca = random.randint(0, 40)
 if "temperatura" not in st.session_state:
     st.session_state.temperatura = []
 if "ar_ligado" not in st.session_state:
     st.session_state.ar_ligado = False
 if "luz_ligada" not in st.session_state:
     st.session_state.luz_ligada = False
-if "presenca" not in st.session_state:
-    st.session_state.presenca = []
+if "verificar_presenca" not in st.session_state:
+    st.session_state.verificar_presenca = 0
+st.metric("Verifica presença", "Tem pessoas" if st.session_state.verificar_presenca > 0 else "nao")
 if len(st.session_state.temperatura) > 0:
     variacao = round(temperatura - st.session_state.temperatura[-1], 1)
 else:
@@ -40,10 +43,8 @@ with c3:
         st.metric("Luminosidade", f"{luminosidade} %")
 with c4:
     with st.container(border=True):
-        st.metric("Presença", "tem" if presenca else "Não tem")
+       st.metric("Presença", "tem" if st.session_state.verificar_presenca > 0 else "Não tem")
 st.session_state.temperatura.append(temperatura)
-st.session_state.presenca.append(presenca)
-st.subheader("🌡️ Temperatura do ar-condicionado")
 st.caption("Atualizado em tempo real (dados simulados)") 
 if temperatura > 28:
     st.warning("Temperatura muito alta")
@@ -58,13 +59,8 @@ with aba2:
     col_ar, col_luz = st.columns(2)
 with aba3:
     st.subheader("Verificação de Pessoas")
-    tem_pessoas = st.session_state.presenca.count(True)
-    nao_tem_pessoas = st.session_state.presenca.count(False)
-    v1, v2 = st.columns(2)
-    v1.metric("Tem pessoas", tem_pessoas)
-    v2.metric("Não tem pessoas", nao_tem_pessoas)
-    st.table({"Presença": ["Sim" if p else "Não" for p in st.session_state.presenca]})
-    st.button("Atualizar verificação")
+    st.metric("Pessoas nesta sala", st.session_state.verificar_presenca)
+    st.button("Atualizar Prenseça", on_click=sortear_verifica_presenca)
 with col_ar:
         with st.container(border=True):
             st.markdown("### ❄️ Ar-condicionado")
