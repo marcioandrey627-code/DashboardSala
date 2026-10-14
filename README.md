@@ -1,72 +1,96 @@
-# 🏫 Dashboard Smart Class
+# Dashboard de Monitoramento de Sala 🏫
 
-Painel web feito em **Python + Streamlit** para monitorar e controlar uma sala de aula inteligente. Os dados dos sensores são **simulados**, e o projeto pode ser integrado a um **Arduino** para usar leituras reais.
+Aplicação web demonstrativa para acompanhar condições de uma sala, visualizar leituras simuladas de sensores e testar regras de automação de iluminação e ar-condicionado.
 
-## ✨ Funcionalidades
+> **Estado atual:** protótipo com dados simulados. **Não há integração real com sensores, Arduino, ar-condicionado ou iluminação.** Os comandos são apenas registrados no console do navegador.
 
-- 📊 **Monitoramento em tempo real:** temperatura, umidade, luminosidade e presença
-- 🤖 **Modo automático:** liga e desliga o ar-condicionado e a luz conforme regras configuráveis
-- 🖐️ **Modo manual:** controle do ar e da luz por botões
-- ⏻ **Desligar tudo:** botão para desligar ar e luz de uma vez, quando não há aula
-- ⚠️ **Alertas:** temperatura alta, ar seco, umidade alta e equipamentos ligados com a sala vazia
-- 📈 **Histórico em gráficos** e download dos dados em CSV
-- 📋 **Registro de eventos** com o horário de cada ação
-- 🔄 **Atualização automática** com intervalo ajustável
-- ⚙️ **Configurações na barra lateral:** limites de temperatura e luminosidade
+## Funcionalidades
 
-## 🛠️ Tecnologias
+- **Sensores simulados:** temperatura, umidade, luminosidade e quantidade de pessoas.
+- **Visão geral:** valores recentes, indicação de estado e alertas.
+- **Gráficos:** histórico de um sensor selecionado e histórico de presença (desenhados em Canvas).
+- **Controle manual:** simulação dos comandos de ligar/desligar ar e luz.
+- **Modo automático:** aplica regras de temperatura, luminosidade e presença.
+- **Atualização:** botão para nova leitura ou atualização automática com intervalo configurável.
+- **Histórico:** exportação das leituras em CSV, limpeza do histórico e registro dos últimos eventos.
+- **Layout responsivo:** adapta-se a telas menores.
 
-- Python 3
-- [Streamlit](https://streamlit.io/)
-- [Pandas](https://pandas.pydata.org/)
+## Tecnologias
 
-## ▶️ Como executar
+HTML5, CSS3 e JavaScript puro, sem frameworks e sem necessidade de instalar dependências.
 
-1. Instale as dependências:
+## Como executar
 
-```bash
-pip install -U streamlit pandas
+1. Baixe ou clone este repositório.
+2. Mantenha `index.html`, `dashboard_css.css` e `dashboard.js` na **mesma pasta**.
+3. Abra `index.html` no navegador ou use a extensão **Live Server** no Visual Studio Code (clique com o botão direito no arquivo e escolha **Open with Live Server**).
+4. Teste o botão **Atualizar agora**, as abas **Sensores**, **Controles** e **Verificação**.
+
+Também é possível publicar os arquivos estáticos usando **GitHub Pages** (veja a seção *Publicação*).
+
+## Estrutura
+
+```text
+dashboard-monitoramento-sala/
+├── index.html           # Elementos e estrutura das telas
+├── dashboard_css.css    # Estilo, layout e responsividade
+├── dashboard.js         # Estado, sensores simulados, regras, gráficos e eventos
+├── README.md            # Instruções e documentação
+└── CONTRIBUTING.md      # Orientações para colaborar
 ```
 
-2. Rode o painel:
+## Como funciona
 
-```bash
-streamlit run dashboard.py
-```
+1. `index.html` carrega os estilos e o script.
+2. Ao iniciar, `dashboard.js` gera a primeira leitura simulada.
+3. O painel atualiza indicadores, alertas e gráficos.
+4. A opção **Atualizar agora** produz outra leitura. A atualização automática é opcional.
+5. No modo automático, as regras decidem ligar/desligar os **estados simulados** de ar e luz conforme presença, temperatura e luminosidade.
 
-3. Abra o endereço mostrado no terminal (normalmente `http://localhost:8501`).
+### Regras de automação
 
-> Requer Streamlit 1.37 ou superior.
+- **Sala vazia:** ar e luz são desligados pelo modo automático.
+- **Ar:** se houver pessoas, liga quando a temperatura está acima do limite escolhido; desliga quando cai abaixo de `limite - 2 °C`.
+- **Luz:** se houver pessoas, liga quando a luminosidade está abaixo do limite escolhido; desliga quando supera `limite + 20`.
+- Essas faixas evitam alternâncias constantes próximas ao limite (histerese).
+- Se o modo automático estiver ligado, os botões individuais de ar e luz ficam desativados.
+- O botão **Desligar tudo (sem aula)** também desativa o modo automático.
 
-## 🧠 Como a automação funciona
+## Arquivos e pontos importantes do código
 
-| Equipamento | Liga quando | Desliga quando |
-|---|---|---|
-| ❄️ Ar-condicionado | temperatura acima do limite e há pessoas | temperatura 2 °C abaixo do limite, ou sala vazia |
-| 💡 Luz | luminosidade abaixo do limite e há pessoas | luminosidade 20 pontos acima do limite, ou sala vazia |
+| Arquivo | Responsabilidade | Onde procurar |
+| --- | --- | --- |
+| `index.html` | Campos, botões, abas, canvases e IDs | `head`, seções de cada aba |
+| `dashboard_css.css` | Aparência e adaptação para celular | `.sidebar`, `.banner`, `.metricas`, `@media` |
+| `dashboard.js` | Estado da aplicação | objeto `estado` |
+| `dashboard.js` | Geração de dados fictícios | `lerSensores()` |
+| `dashboard.js` | Regras automáticas | `aplicarAutomacao()` |
+| `dashboard.js` | Renderização e gráficos | `desenhar()` e `desenharGraficos()` |
+| `dashboard.js` | Eventos e cliques | `iniciar()` |
+| `dashboard.js` | Integração futura com hardware | `enviarComando()` (hoje apenas `console.log`) |
 
-Os limites são ajustados na barra lateral. A diferença entre ligar e desligar (histerese) evita que os equipamentos fiquem ligando e desligando toda hora.
+## Limitações atuais
 
-## 🔌 Integração com Arduino (opcional)
+- Valores de sensores, incluindo o número de pessoas, são **fictícios**.
+- Não existe backend ou banco de dados; o histórico fica em memória e reinicia ao recarregar a página.
+- Não há autenticação nem integração física com dispositivos.
+- A exportação CSV gera um arquivo com as leituras da sessão atual.
 
-O Arduino lê os sensores e envia os dados ao Python (por USB/serial ou WiFi), e o painel devolve os comandos de ligar e desligar.
+## Próximas etapas possíveis
 
-```
-Sensores ──► Arduino ──► USB ou WiFi ──► Python/Streamlit ──► Navegador
-                ▲                              │
-                └──── comandos ligar/desligar ─┘
-```
+- Integrar um dispositivo real ou API para receber leituras.
+- Persistir histórico em uma base de dados.
+- Adicionar testes automatizados e melhorar acessibilidade.
+- Documentar esquema de comunicação e segurança antes de controlar equipamentos reais.
 
-Esta parte ainda não está no código atual, que usa dados simulados.
+## Publicação com GitHub Pages
 
-## 📁 Estrutura
+Em **Settings → Pages**, selecione **Deploy from a branch**, escolha a branch `main` e a pasta `/(root)`, e salve. O GitHub exibirá o endereço do site quando a publicação terminar. Não publique senhas, tokens ou dados pessoais no repositório ou no site.
 
-```
-.
-├── dashboard.py   # aplicação principal
-└── README.md
-```
+## Trabalho em equipe
 
-## 📌 Status
+Consulte [CONTRIBUTING.md](CONTRIBUTING.md) antes de alterar arquivos. Use **Issues** para registrar tarefas e **Pull Requests** para propor mudanças.
 
-Projeto em desenvolvimento, criado para estudo e demonstração.
+## Créditos
+
+Projeto desenvolvido pela equipe responsável pelo Dashboard de Monitoramento de Sala. Adicione aqui os nomes e as responsabilidades que cada integrante autorizar publicar.
