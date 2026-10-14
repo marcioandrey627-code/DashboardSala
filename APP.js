@@ -1,23 +1,20 @@
+
 "use strict";
 
-/* =====================================================================
-   DASHBOARD TESTE - lógica da aplicação (JavaScript)
-   Conversão do dashboard.py (Streamlit) para HTML + CSS + JS.
-   ===================================================================== */
+// ==========================================
+// DASHBOARD - SENSORES E COMANDOS DE VOZ
+// ==========================================
 
-// ---------- constantes ----------
-const LIMITE_HISTORICO = 100;   // leituras guardadas
-const LIMITE_EVENTOS = 15;      // eventos guardados no registro
-const COR_GRAFICO = "#2563eb";
-const COR_GRAFICO_PESSOAS = "#06b6d4";
+const $ = (id) => document.getElementById(id);
 
-// [nome, texto ligado, texto desligado]
+const LIMITE_HISTORICO = 100;
+const LIMITE_EVENTOS = 15;
+
 const NOMES = {
   arLigado: ["Ar-condicionado", "ligado", "desligado"],
-  luzLigada: ["Luz", "ligada", "desligada"],
+  luzLigada: ["Luz", "ligada", "desligada"]
 };
 
-// ---------- estado (equivale ao st.session_state do Python) ----------
 const estado = {
   sensores: null,
   historico: [],
@@ -25,119 +22,134 @@ const estado = {
   arLigado: false,
   luzLigada: false,
   modoAuto: false,
-  // configurações da barra lateral
   tempAlta: 28,
   luxBaixa: 40,
   autoRefresh: false,
-  intervalo: 5,
+  intervalo: 5
 };
 
-let temporizador = null;   // guarda o setInterval da atualização automática
+let temporizador = null;
+let controleVoz = null;
 
-// atalho: $("id") em vez de document.getElementById("id")
-const $ = (id) => document.getElementById(id);
-
-
-// =====================================================================
+// ==========================================
 // FUNÇÕES AUXILIARES
-// =====================================================================
+// ==========================================
+
 function limitar(valor, minimo, maximo) {
   return Math.max(minimo, Math.min(maximo, valor));
 }
 
-function aleatorio(min, max) {            // decimal entre min e max
+function aleatorio(min, max) {
   return min + Math.random() * (max - min);
 }
 
-function inteiroAleatorio(min, max) {     // inteiro entre min e max (inclusive)
+function inteiroAleatorio(min, max) {
   return Math.floor(aleatorio(min, max + 1));
 }
 
-function arredondar(valor, casas) {
+function arredondar(valor, casas = 1) {
   return Number(valor.toFixed(casas));
 }
 
+// ==========================================
+// SENSORES SIMULADOS
+// ==========================================
 
-// =====================================================================
-// SENSORES (simulados)
-// =====================================================================
 function lerSensores(anterior = null) {
-  if (anterior === null) {
+  if (!anterior) {
     return {
-      temperatura: arredondar(aleatorio(20, 30), 1),
+      temperatura: arredondar(aleatorio(20, 30)),
       umidade: inteiroAleatorio(40, 70),
       luminosidade: inteiroAleatorio(30, 80),
-      pessoas: inteiroAleatorio(0, 30),
+      pessoas: inteiroAleatorio(0, 30)
     };
   }
+
   return {
-    temperatura: arredondar(limitar(anterior.temperatura + aleatorio(-1, 1), 16, 32), 1),
-    umidade: limitar(anterior.umidade + inteiroAleatorio(-3, 3), 30, 90),
-    luminosidade: limitar(anterior.luminosidade + inteiroAleatorio(-8, 8), 10, 100),
-    pessoas: limitar(anterior.pessoas + inteiroAleatorio(-4, 4), 0, 40),
+    temperatura: arredondar(limitar(
+      anterior.temperatura + aleatorio(-1, 1), 16, 32
+    )),
+    umidade: limitar(
+      anterior.umidade + inteiroAleatorio(-3, 3), 30, 90
+    ),
+    luminosidade: limitar(
+      anterior.luminosidade + inteiroAleatorio(-8, 8), 10, 100
+    ),
+    pessoas: limitar(
+      anterior.pessoas + inteiroAleatorio(-4, 4), 0, 40
+    )
   };
 }
 
-// Ponto de integração com o Arduino: quando houver hardware real,
-// este é o lugar de enviar o comando (ex.: fetch para "/ar/1" ou "AR:1" na serial).
+// Atualmente registra comandos simulados.
+// Integração com Arduino pode ser adicionada aqui.
 function enviarComando(chave, valor) {
   const prefixo = chave === "arLigado" ? "AR" : "LUZ";
-  console.log(`[comando] ${prefixo}:${valor ? 1 : 0}`);
+  console.log(`[SIMULAÇÃO] ${prefixo}:${valor ? 1 : 0}`);
 }
 
+// ==========================================
+// EVENTOS E CONTROLES
+// ==========================================
 
-// =====================================================================
-// EVENTOS, AUTOMAÇÃO E CONTROLES
-// =====================================================================
 function registrarEvento(texto) {
   const hora = new Date().toLocaleTimeString("pt-BR");
-  estado.eventos.unshift({ hora, texto });   // mais novo primeiro
-  estado.eventos.splice(LIMITE_EVENTOS);     // descarta o que passar do limite
+
+  estado.eventos.unshift({ hora, texto });
+  estado.eventos.splice(LIMITE_EVENTOS);
 }
 
-// Muda o ar/luz e registra o evento, mas só se o estado realmente mudou.
 function definir(chave, valor, motivo) {
-  if (estado[chave] !== valor) {
-    estado[chave] = valor;
-    const [nome, ligado, desligado] = NOMES[chave];
-    registrarEvento(`${nome} ${valor ? ligado : desligado} (${motivo})`);
-    enviarComando(chave, valor);
-  }
+  if (estado[chave] === valor) return;
+
+  estado[chave] = valor;
+
+  const [nome, ligado, desligado] = NOMES[chave];
+
+  registrarEvento(
+    `${nome} ${valor ? ligado : desligado} (${motivo})`
+  );
+
+  enviarComando(chave, valor);
 }
 
 function aplicarAutomacao(leitura) {
-  const alta = estado.tempAlta;
-  const baixa = estado.luxBaixa;
   const temGente = leitura.pessoas > 0;
 
-  // Ar: liga acima do limite, só desliga 2 °C abaixo (evita liga/desliga toda hora)
   if (!temGente) {
     definir("arLigado", false, "sala vazia");
-  } else if (leitura.temperatura > alta) {
-    definir("arLigado", true, "temperatura alta");
-  } else if (leitura.temperatura < alta - 2) {
-    definir("arLigado", false, "temperatura ok");
+    definir("luzLigada", false, "sala vazia");
+    return;
   }
 
-  // Luz: liga abaixo do limite, só desliga 20 pontos acima
-  if (!temGente) {
-    definir("luzLigada", false, "sala vazia");
-  } else if (leitura.luminosidade < baixa) {
+  // Histerese: evita ligar e desligar sem parar.
+  if (leitura.temperatura > estado.tempAlta) {
+    definir("arLigado", true, "temperatura alta");
+  } else if (leitura.temperatura < estado.tempAlta - 2) {
+    definir("arLigado", false, "temperatura normal");
+  }
+
+  if (leitura.luminosidade < estado.luxBaixa) {
     definir("luzLigada", true, "pouca luz");
-  } else if (leitura.luminosidade > baixa + 20) {
+  } else if (leitura.luminosidade > estado.luxBaixa + 20) {
     definir("luzLigada", false, "luz suficiente");
   }
 }
 
 function atualizarSensores() {
-  const nova = lerSensores(estado.sensores);
-  estado.sensores = nova;
-  estado.historico.push({ hora: new Date(), ...nova });
+  estado.sensores = lerSensores(estado.sensores);
+
+  estado.historico.push({
+    hora: new Date(),
+    ...estado.sensores
+  });
+
   if (estado.historico.length > LIMITE_HISTORICO) {
-    estado.historico.splice(0, estado.historico.length - LIMITE_HISTORICO);
+    estado.historico.shift();
   }
+
   if (estado.modoAuto) {
-    aplicarAutomacao(nova);
+    aplicarAutomacao(estado.sensores);
   }
 }
 
@@ -153,240 +165,361 @@ function alternar(chave) {
 
 function mudarModoAuto(ligado) {
   estado.modoAuto = ligado;
-  if (ligado) {
-    registrarEvento("Modo automático ligado");
-    aplicarAutomacao(estado.sensores);
-  } else {
-    registrarEvento("Modo automático desligado");
-  }
+
+  registrarEvento(
+    `Modo automático ${ligado ? "ligado" : "desligado"}`
+  );
+
+  if (ligado) aplicarAutomacao(estado.sensores);
+
   desenhar();
 }
 
-// Botão "sem aula": sai do modo automático e desliga ar e luz.
 function desligarTudo() {
   if (estado.modoAuto) {
-    // Sem isso, a automação ligaria tudo de novo na próxima leitura
     estado.modoAuto = false;
     registrarEvento("Modo automático desligado");
   }
-  definir("arLigado", false, "botão desligar tudo");
-  definir("luzLigada", false, "botão desligar tudo");
+
+  definir("arLigado", false, "desligar tudo");
+  definir("luzLigada", false, "desligar tudo");
+
   desenhar();
 }
 
 function limparHistorico() {
-  estado.historico = estado.historico.slice(-1);   // mantém a última leitura
+  estado.historico = estado.historico.slice(-1);
   desenhar();
 }
 
 function baixarCsv() {
-  const linhas = ["hora,temperatura,umidade,luminosidade,pessoas"];
-  for (const l of estado.historico) {
-    linhas.push([l.hora.toISOString(), l.temperatura, l.umidade, l.luminosidade, l.pessoas].join(","));
+  const linhas = [
+    "hora,temperatura,umidade,luminosidade,pessoas"
+  ];
+
+  for (const leitura of estado.historico) {
+    linhas.push([
+      leitura.hora.toISOString(),
+      leitura.temperatura,
+      leitura.umidade,
+      leitura.luminosidade,
+      leitura.pessoas
+    ].join(","));
   }
-  const blob = new Blob([linhas.join("\n")], { type: "text/csv;charset=utf-8" });
+
+  const blob = new Blob(
+    [linhas.join("\n")],
+    { type: "text/csv;charset=utf-8" }
+  );
+
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
+
   link.href = url;
   link.download = "historico.csv";
+  document.body.appendChild(link);
   link.click();
+  link.remove();
+
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-// Liga/desliga a atualização automática (equivale ao run_every do Streamlit).
 function configurarTemporizador() {
   clearInterval(temporizador);
-  temporizador = null;
+
   if (estado.autoRefresh) {
-    temporizador = setInterval(atualizarAgora, estado.intervalo * 1000);
+    temporizador = setInterval(
+      atualizarAgora,
+      estado.intervalo * 1000
+    );
   }
 }
 
-
-// =====================================================================
+// ==========================================
 // ALERTAS
-// =====================================================================
-function calcularAlertas(s) {
+// ==========================================
+
+function calcularAlertas(sensor) {
   const alertas = [];
-  if (s.temperatura > estado.tempAlta) alertas.push("🌡️ Temperatura muito alta");
-  if (s.umidade < 40) alertas.push("💧 Ar muito seco");
-  if (s.umidade > 75) alertas.push("💧 Umidade muito alta");
-  if (s.pessoas === 0 && (estado.arLigado || estado.luzLigada)) {
-    alertas.push("⚡ Ar ou luz ligados com a sala vazia");
+
+  if (sensor.temperatura > estado.tempAlta) {
+    alertas.push("🌡️ Temperatura muito alta");
   }
+
+  if (sensor.umidade < 40) {
+    alertas.push("💧 Ar muito seco");
+  }
+
+  if (sensor.umidade > 75) {
+    alertas.push("💧 Umidade muito alta");
+  }
+
+  if (
+    sensor.pessoas === 0 &&
+    (estado.arLigado || estado.luzLigada)
+  ) {
+    alertas.push("⚡ Equipamentos ligados com sala vazia");
+  }
+
   return alertas;
 }
 
+// ==========================================
+// GRÁFICOS
+// ==========================================
 
-// =====================================================================
-// GRÁFICO (desenhado à mão no <canvas>, sem bibliotecas)
-// =====================================================================
-function desenharGrafico(canvas, valores, cor, casas) {
+function desenharGrafico(canvas, valores, cor, casas = 0) {
   const largura = canvas.clientWidth;
   const altura = canvas.clientHeight;
-  if (largura === 0 || altura === 0) return;   // aba escondida: nada a desenhar
 
-  const dpr = window.devicePixelRatio || 1;    // deixa nítido em telas de alta resolução
-  canvas.width = largura * dpr;
-  canvas.height = altura * dpr;
+  if (!largura || !altura || !valores.length) return;
+
+  const dpr = window.devicePixelRatio || 1;
+
+  canvas.width = Math.round(largura * dpr);
+  canvas.height = Math.round(altura * dpr);
+
   const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, largura, altura);
 
-  const margemEsq = 46, margemDir = 14, margemTopo = 14, margemBase = 14;
-  const w = largura - margemEsq - margemDir;
-  const h = altura - margemTopo - margemBase;
+  const margem = {
+    esquerda: 46,
+    direita: 14,
+    topo: 14,
+    baixo: 20
+  };
 
-  let min = Math.min(...valores);
-  let max = Math.max(...valores);
-  if (min === max) { min -= 1; max += 1; }
-  const folga = (max - min) * 0.1;
-  min -= folga;
-  max += folga;
+  const w = largura - margem.esquerda - margem.direita;
+  const h = altura - margem.topo - margem.baixo;
 
-  const x = (i) => margemEsq + (valores.length === 1 ? w / 2 : (i / (valores.length - 1)) * w);
-  const y = (v) => margemTopo + h - ((v - min) / (max - min)) * h;
+  if (w <= 0 || h <= 0) return;
 
-  // linhas de grade + números do eixo vertical
+  let minimo = Math.min(...valores);
+  let maximo = Math.max(...valores);
+
+  if (minimo === maximo) {
+    minimo -= 1;
+    maximo += 1;
+  }
+
+  const folga = (maximo - minimo) * 0.1;
+  minimo -= folga;
+  maximo += folga;
+
+  const x = (i) => margem.esquerda +
+    (valores.length === 1
+      ? w / 2
+      : (i / (valores.length - 1)) * w);
+
+  const y = (v) => margem.topo + h -
+    ((v - minimo) / (maximo - minimo)) * h;
+
   ctx.font = "12px sans-serif";
   ctx.lineWidth = 1;
+
+  // Grade e valores verticais.
   for (let i = 0; i <= 4; i++) {
-    const v = min + ((max - min) * i) / 4;
-    const py = y(v);
-    ctx.strokeStyle = "rgba(148, 163, 184, 0.35)";
+    const valor = minimo + ((maximo - minimo) * i) / 4;
+    const py = y(valor);
+
+    ctx.strokeStyle = "rgba(148,163,184,0.35)";
     ctx.beginPath();
-    ctx.moveTo(margemEsq, py);
-    ctx.lineTo(largura - margemDir, py);
+    ctx.moveTo(margem.esquerda, py);
+    ctx.lineTo(largura - margem.direita, py);
     ctx.stroke();
+
     ctx.fillStyle = "#64748b";
     ctx.textAlign = "right";
     ctx.textBaseline = "middle";
-    ctx.fillText(v.toFixed(casas), margemEsq - 6, py);
+    ctx.fillText(
+      valor.toFixed(casas),
+      margem.esquerda - 6,
+      py
+    );
   }
 
-  // a linha dos dados
+  // Linha do gráfico.
   ctx.strokeStyle = cor;
   ctx.lineWidth = 2;
   ctx.beginPath();
-  valores.forEach((v, i) => {
-    if (i === 0) ctx.moveTo(x(i), y(v));
-    else ctx.lineTo(x(i), y(v));
+
+  valores.forEach((valor, i) => {
+    if (i === 0) ctx.moveTo(x(i), y(valor));
+    else ctx.lineTo(x(i), y(valor));
   });
+
   ctx.stroke();
 
-  // bolinha na leitura mais recente
+  // Ponto mais recente.
+  const ultimo = valores.length - 1;
+
   ctx.fillStyle = cor;
   ctx.beginPath();
-  ctx.arc(x(valores.length - 1), y(valores[valores.length - 1]), 3.5, 0, Math.PI * 2);
+  ctx.arc(x(ultimo), y(valores[ultimo]), 4, 0, Math.PI * 2);
   ctx.fill();
 }
 
 function desenharGraficos() {
   const sensor = $("sensor-grafico").value;
-  desenharGrafico($("grafico-sensor"), estado.historico.map((l) => l[sensor]),
-                  COR_GRAFICO, sensor === "temperatura" ? 1 : 0);
-  desenharGrafico($("grafico-pessoas"), estado.historico.map((l) => l.pessoas),
-                  COR_GRAFICO_PESSOAS, 0);
+
+  desenharGrafico(
+    $("grafico-sensor"),
+    estado.historico.map((l) => l[sensor]),
+    "#2563eb",
+    sensor === "temperatura" ? 1 : 0
+  );
+
+  desenharGrafico(
+    $("grafico-pessoas"),
+    estado.historico.map((l) => l.pessoas),
+    "#06b6d4",
+    0
+  );
 }
 
+// ==========================================
+// ATUALIZAÇÃO VISUAL
+// ==========================================
 
-// =====================================================================
-// DESENHAR A TELA (lê o estado e atualiza o HTML)
-// =====================================================================
-// Mostra a variação (▲ / ▼) com cor. "inverso" = subir é ruim (ex.: temperatura).
-function mostrarDelta(id, valor, texto, inverso) {
-  const el = $(id);
+function mostrarDelta(id, valor, texto, inverso = false) {
+  const elemento = $(id);
+
   if (valor === null) {
-    el.textContent = "";
-    el.className = "delta";
+    elemento.textContent = "";
+    elemento.className = "delta";
     return;
   }
-  let classe = "neutro";
-  if (valor !== 0) {
-    const bom = inverso ? valor < 0 : valor > 0;
-    classe = bom ? "bom" : "ruim";
-  }
-  el.textContent = `${valor > 0 ? "▲" : valor < 0 ? "▼" : "•"} ${texto}`;
-  el.className = `delta ${classe}`;
+
+  const bom = inverso ? valor < 0 : valor > 0;
+
+  elemento.textContent =
+    `${valor > 0 ? "▲" : valor < 0 ? "▼" : "•"} ${texto}`;
+
+  elemento.className = valor === 0
+    ? "delta neutro"
+    : `delta ${bom ? "bom" : "ruim"}`;
 }
 
 function mostrarPill(id, ligado, textoLigado, textoDesligado) {
-  const el = $(id);
-  el.className = `pill ${ligado ? "on" : "off"}`;
-  el.textContent = ligado ? `🟢 ${textoLigado}` : `⚫ ${textoDesligado}`;
+  const elemento = $(id);
+
+  elemento.className = `pill ${ligado ? "on" : "off"}`;
+  elemento.textContent = ligado
+    ? `🟢 ${textoLigado}`
+    : `⚫ ${textoDesligado}`;
 }
 
 function desenhar() {
   const s = estado.sensores;
   const hist = estado.historico;
+  if (!s) return;
+
   const alertas = calcularAlertas(s);
 
-  // banner
-  $("banner-status").textContent = alertas.length ? `🟠 ${alertas.length} alerta(s)` : "🟢 Tudo normal";
-  $("banner-modo").textContent = estado.modoAuto ? "🤖 Automático" : "🖐️ Manual";
-  $("banner-hora").textContent = `🕒 ${hist[hist.length - 1].hora.toLocaleTimeString("pt-BR")}`;
+  $("banner-status").textContent = alertas.length
+    ? `🟠 ${alertas.length} alerta(s)`
+    : "🟢 Tudo normal";
 
-  // métricas
-  const variacao = hist.length > 1
-    ? arredondar(s.temperatura - hist[hist.length - 2].temperatura, 1)
-    : null;
+  $("banner-modo").textContent = estado.modoAuto
+    ? "🤖 Automático"
+    : "🖐️ Manual";
+
+  $("banner-hora").textContent =
+    `🕒 ${hist[hist.length - 1].hora.toLocaleTimeString("pt-BR")}`;
+
   $("m-temp").textContent = `${s.temperatura.toFixed(1)} °C`;
-  mostrarDelta("m-temp-delta", variacao,
-               variacao === null ? "" : `${variacao > 0 ? "+" : ""}${variacao.toFixed(1)} °C`, true);
   $("m-umid").textContent = `${s.umidade} %`;
   $("m-lux").textContent = `${s.luminosidade} %`;
-  $("m-presenca").textContent = s.pessoas > 0 ? "Tem pessoas" : "Não tem";
 
-  // alertas
+  $("m-presenca").textContent =
+    s.pessoas > 0 ? "Tem pessoas" : "Não tem";
+
+  const anterior = hist.length > 1
+    ? hist[hist.length - 2]
+    : null;
+
+  const difTemp = anterior
+    ? arredondar(s.temperatura - anterior.temperatura)
+    : null;
+
+  mostrarDelta(
+    "m-temp-delta",
+    difTemp,
+    difTemp === null ? "" : `${difTemp.toFixed(1)} °C`,
+    true
+  );
+
+  $("m-pessoas").textContent = s.pessoas;
+
+  const difPessoas = anterior
+    ? s.pessoas - anterior.pessoas
+    : null;
+
+  mostrarDelta(
+    "m-pessoas-delta",
+    difPessoas,
+    difPessoas === null ? "" : String(difPessoas)
+  );
+
+  // Alertas.
   const caixa = $("alertas");
-  caixa.innerHTML = "";
-  if (alertas.length > 0) {
-    for (const texto of alertas) {
-      const div = document.createElement("div");
-      div.className = "alerta aviso";
-      div.textContent = texto;
-      caixa.appendChild(div);
-    }
-  } else {
+  caixa.replaceChildren();
+
+  if (alertas.length === 0) {
     const div = document.createElement("div");
     div.className = "alerta ok";
     div.textContent = "Tudo normal";
     caixa.appendChild(div);
+  } else {
+    alertas.forEach((texto) => {
+      const div = document.createElement("div");
+      div.className = "alerta aviso";
+      div.textContent = texto;
+      caixa.appendChild(div);
+    });
   }
 
-  // aba controles
+  // Controles.
   $("modo-auto").checked = estado.modoAuto;
-  mostrarPill("pill-ar", estado.arLigado, "LIGADO", "DESLIGADO");
-  mostrarPill("pill-luz", estado.luzLigada, "LIGADA", "DESLIGADA");
+
+  mostrarPill(
+    "pill-ar", estado.arLigado, "LIGADO", "DESLIGADO"
+  );
+
+  mostrarPill(
+    "pill-luz", estado.luzLigada, "LIGADA", "DESLIGADA"
+  );
+
   $("btn-ar").disabled = estado.modoAuto;
   $("btn-luz").disabled = estado.modoAuto;
 
+  // Registro de eventos.
   const lista = $("lista-eventos");
-  lista.innerHTML = "";
-  if (estado.eventos.length > 0) {
-    for (const ev of estado.eventos) {
-      const div = document.createElement("div");
-      div.className = "evento";
-      const negrito = document.createElement("b");
-      negrito.textContent = ev.hora;
-      div.appendChild(negrito);
-      div.appendChild(document.createTextNode(`   ${ev.texto}`));
-      lista.appendChild(div);
-    }
-  } else {
+  lista.replaceChildren();
+
+  if (estado.eventos.length === 0) {
     const p = document.createElement("p");
     p.className = "vazio";
     p.textContent = "Nenhum evento ainda.";
     lista.appendChild(p);
-  }
-
-  // aba verificação
-  $("m-pessoas").textContent = s.pessoas;
-  if (hist.length > 1) {
-    const dif = s.pessoas - hist[hist.length - 2].pessoas;
-    mostrarDelta("m-pessoas-delta", dif, `${dif > 0 ? "+" : ""}${dif}`, false);
   } else {
-    mostrarDelta("m-pessoas-delta", null, "", false);
+    estado.eventos.forEach((evento) => {
+      const div = document.createElement("div");
+      div.className = "evento";
+
+      const b = document.createElement("b");
+      b.textContent = evento.hora;
+
+      div.appendChild(b);
+      div.appendChild(
+        document.createTextNode(` ${evento.texto}`)
+      );
+
+      lista.appendChild(div);
+    });
   }
 
   desenharGraficos();
@@ -394,62 +527,306 @@ function desenhar() {
 
 function mostrarAba(nome) {
   document.querySelectorAll(".aba-btn").forEach((botao) => {
-    botao.classList.toggle("ativa", botao.dataset.aba === nome);
+    botao.classList.toggle(
+      "ativa",
+      botao.dataset.aba === nome
+    );
   });
+
   document.querySelectorAll(".aba").forEach((secao) => {
-    secao.classList.toggle("ativa", secao.id === `aba-${nome}`);
+    secao.classList.toggle(
+      "ativa",
+      secao.id === `aba-${nome}`
+    );
   });
-  desenharGraficos();   // o gráfico só tem tamanho depois que a aba aparece
+
+  desenharGraficos();
 }
 
+// ==========================================
+// RECONHECIMENTO DE VOZ
+// ==========================================
 
-// =====================================================================
-// INÍCIO: liga os botões e faz a primeira leitura
-// =====================================================================
+class VozController {
+  static suportado() {
+    return Boolean(
+      window.SpeechRecognition ||
+      window.webkitSpeechRecognition
+    );
+  }
+
+  constructor({ onStatus, onTranscript, onSpeech, onCommand }) {
+    const Recognition =
+      window.SpeechRecognition ||
+      window.webkitSpeechRecognition;
+
+    if (!Recognition) {
+      throw new Error("Reconhecimento de voz indisponível");
+    }
+
+    this.reconhecimento = new Recognition();
+    this.reconhecimento.lang = "pt-BR";
+    this.reconhecimento.continuous = false;
+    this.reconhecimento.interimResults = true;
+
+    this.ativo = false;
+    this.onStatus = onStatus;
+    this.onTranscript = onTranscript;
+    this.onSpeech = onSpeech;
+    this.onCommand = onCommand;
+
+    this.reconhecimento.onstart = () => {
+      this.ativo = true;
+      this.onStatus("Ouvindo...");
+      this.onSpeech(true);
+    };
+
+    this.reconhecimento.onend = () => {
+      this.ativo = false;
+      this.onSpeech(false);
+      this.onStatus("Microfone desligado");
+    };
+
+    this.reconhecimento.onerror = (evento) => {
+      this.ativo = false;
+      this.onSpeech(false);
+      this.onStatus(`Erro no microfone: ${evento.error}`);
+    };
+
+    this.reconhecimento.onresult = (evento) => {
+      const resultados = Array.from(evento.results);
+
+      const texto = resultados
+        .map((r) => r[0].transcript)
+        .join(" ");
+
+      this.onTranscript(texto);
+
+      // Só executa comandos quando a fala for finalizada.
+      const finais = resultados.filter((r) => r.isFinal);
+      if (!finais.length) return;
+
+      const falaFinal = finais
+        .map((r) => r[0].transcript)
+        .join(" ");
+
+      const comando = VozController.identificarComando(falaFinal);
+
+      if (comando) {
+        this.onCommand(comando);
+        this.onStatus(`Comando recebido: ${falaFinal.trim()}`);
+      } else {
+        this.onStatus("Comando não reconhecido");
+      }
+    };
+  }
+
+  static identificarComando(texto) {
+    const frase = texto
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9\s-]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    const ligar = /\b(ligar|liga|acender|acenda)\b/.test(frase);
+    const desligar = /\b(desligar|desliga|apagar|apague)\b/.test(frase);
+
+    const ar = /\b(ar|ar-condicionado|climatizacao)\b/.test(frase);
+    const luz = /\b(luz|luzes|iluminacao)\b/.test(frase);
+
+    // Desligar é analisado antes de ligar.
+    if (desligar && ar) return "desligar_ar";
+    if (desligar && luz) return "desligar_luz";
+    if (ligar && ar) return "ligar_ar";
+    if (ligar && luz) return "ligar_luz";
+
+    if (/\b(simular|atualizar|atualize)\b/.test(frase)) {
+      return "simular";
+    }
+
+    return null;
+  }
+
+  iniciar() {
+    if (this.ativo) return;
+
+    try {
+      this.reconhecimento.start();
+      this.onStatus("Solicitando microfone...");
+    } catch (erro) {
+      this.onStatus(`Não foi possível iniciar: ${erro.message}`);
+    }
+  }
+
+  parar() {
+    this.reconhecimento.stop();
+  }
+}
+
+// ==========================================
+// INTEGRAÇÃO DA VOZ COM O DASHBOARD
+// ==========================================
+
+function configurarVoz() {
+  const widget = $("voz-widget");
+  const botao = $("btn-voz");
+  const status = $("voz-status");
+  const transcricao = $("voz-texto");
+
+  if (!VozController.suportado()) {
+    botao.disabled = true;
+    status.textContent = "Voz não suportada neste navegador";
+    return;
+  }
+
+  controleVoz = new VozController({
+    onStatus(mensagem) {
+      status.textContent = mensagem;
+      botao.textContent = controleVoz.ativo
+        ? "⏹ Parar voz"
+        : "🎙️ Iniciar voz";
+
+      botao.setAttribute(
+        "aria-pressed",
+        String(controleVoz.ativo)
+      );
+    },
+
+    onTranscript(texto) {
+      transcricao.textContent = texto;
+    },
+
+    onSpeech(falando) {
+      widget.classList.toggle("falando", falando);
+    },
+
+    onCommand(comando) {
+      const comandosManuais = [
+        "ligar_ar",
+        "desligar_ar",
+        "ligar_luz",
+        "desligar_luz"
+      ];
+
+      // Interrompe a automação se houver comando manual.
+      if (comandosManuais.includes(comando) && estado.modoAuto) {
+        estado.modoAuto = false;
+        registrarEvento(
+          "Modo automático desligado (comando de voz)"
+        );
+      }
+
+      switch (comando) {
+        case "ligar_ar":
+          definir("arLigado", true, "comando de voz");
+          desenhar();
+          break;
+
+        case "desligar_ar":
+          definir("arLigado", false, "comando de voz");
+          desenhar();
+          break;
+
+        case "ligar_luz":
+          definir("luzLigada", true, "comando de voz");
+          desenhar();
+          break;
+
+        case "desligar_luz":
+          definir("luzLigada", false, "comando de voz");
+          desenhar();
+          break;
+
+        case "simular":
+          atualizarAgora();
+          break;
+      }
+    }
+  });
+
+  botao.addEventListener("click", () => {
+    if (controleVoz.ativo) {
+      controleVoz.parar();
+    } else {
+      controleVoz.iniciar();
+    }
+  });
+}
+
+// ==========================================
+// INICIALIZAÇÃO
+// ==========================================
+
 function iniciar() {
-  // barra lateral
   $("temp-alta").addEventListener("input", (e) => {
     estado.tempAlta = Number(e.target.value);
     $("temp-alta-valor").textContent = estado.tempAlta;
     desenhar();
   });
+
   $("lux-baixa").addEventListener("input", (e) => {
     estado.luxBaixa = Number(e.target.value);
     $("lux-baixa-valor").textContent = estado.luxBaixa;
     desenhar();
   });
+
   $("auto-refresh").addEventListener("change", (e) => {
     estado.autoRefresh = e.target.checked;
     $("intervalo").disabled = !estado.autoRefresh;
     configurarTemporizador();
   });
+
   $("intervalo").addEventListener("input", (e) => {
     estado.intervalo = Number(e.target.value);
     $("intervalo-valor").textContent = estado.intervalo;
     configurarTemporizador();
   });
 
-  // botões e controles
-  $("btn-atualizar").addEventListener("click", atualizarAgora);
-  $("btn-baixar").addEventListener("click", baixarCsv);
-  $("btn-limpar").addEventListener("click", limparHistorico);
-  $("btn-desligar-tudo").addEventListener("click", desligarTudo);
-  $("btn-ar").addEventListener("click", () => alternar("arLigado"));
-  $("btn-luz").addEventListener("click", () => alternar("luzLigada"));
-  $("modo-auto").addEventListener("change", (e) => mudarModoAuto(e.target.checked));
-  $("sensor-grafico").addEventListener("change", desenharGraficos);
+  $("btn-atualizar").addEventListener(
+    "click", atualizarAgora
+  );
 
-  // abas
-  document.querySelectorAll(".aba-btn").forEach((botao) => {
-    botao.addEventListener("click", () => mostrarAba(botao.dataset.aba));
+  $("btn-baixar").addEventListener(
+    "click", baixarCsv
+  );
+
+  $("btn-limpar").addEventListener(
+    "click", limparHistorico
+  );
+
+  $("btn-desligar-tudo").addEventListener(
+    "click", desligarTudo
+  );
+
+  $("btn-ar").addEventListener("click", () => {
+    alternar("arLigado");
   });
 
-  // redesenha os gráficos se a janela mudar de tamanho
+  $("btn-luz").addEventListener("click", () => {
+    alternar("luzLigada");
+  });
+
+  $("modo-auto").addEventListener("change", (e) => {
+    mudarModoAuto(e.target.checked);
+  });
+
+  $("sensor-grafico").addEventListener(
+    "change", desenharGraficos
+  );
+
+  document.querySelectorAll(".aba-btn").forEach((botao) => {
+    botao.addEventListener("click", () => {
+      mostrarAba(botao.dataset.aba);
+    });
+  });
+
   window.addEventListener("resize", desenharGraficos);
 
-  // primeira leitura e primeira tela
   atualizarSensores();
   desenhar();
+  configurarVoz();
 }
 
-iniciar();
+document.addEventListener("DOMContentLoaded", iniciar);
