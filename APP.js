@@ -1,4 +1,3 @@
-
 "use strict";
 
 // ==========================================
@@ -66,23 +65,29 @@ function lerSensores(anterior = null) {
   }
 
   return {
-    temperatura: arredondar(limitar(
-      anterior.temperatura + aleatorio(-1, 1), 16, 32
-    )),
+    temperatura: arredondar(
+      limitar(anterior.temperatura + aleatorio(-1, 1), 16, 32)
+    ),
     umidade: limitar(
-      anterior.umidade + inteiroAleatorio(-3, 3), 30, 90
+      anterior.umidade + inteiroAleatorio(-3, 3),
+      30,
+      90
     ),
     luminosidade: limitar(
-      anterior.luminosidade + inteiroAleatorio(-8, 8), 10, 100
+      anterior.luminosidade + inteiroAleatorio(-8, 8),
+      10,
+      100
     ),
     pessoas: limitar(
-      anterior.pessoas + inteiroAleatorio(-4, 4), 0, 40
+      anterior.pessoas + inteiroAleatorio(-4, 4),
+      0,
+      40
     )
   };
 }
 
 // Atualmente registra comandos simulados.
-// Integração com Arduino pode ser adicionada aqui.
+// A integração com Arduino pode ser adicionada aqui.
 function enviarComando(chave, valor) {
   const prefixo = chave === "arLigado" ? "AR" : "LUZ";
   console.log(`[SIMULAÇÃO] ${prefixo}:${valor ? 1 : 0}`);
@@ -163,22 +168,47 @@ function alternar(chave) {
   desenhar();
 }
 
-function mudarModoAuto(ligado) {
+function mudarModoAuto(ligado, motivo = "manual") {
+  if (estado.modoAuto === ligado) {
+    desenhar();
+    return;
+  }
+
   estado.modoAuto = ligado;
 
   registrarEvento(
-    `Modo automático ${ligado ? "ligado" : "desligado"}`
+    `Modo automático ${ligado ? "ligado" : "desligado"} (${motivo})`
   );
 
-  if (ligado) aplicarAutomacao(estado.sensores);
+  if (ligado && estado.sensores) {
+    aplicarAutomacao(estado.sensores);
+  }
 
+  desenhar();
+}
+
+function mudarAtualizacaoAutomatica(ligado, motivo = "manual") {
+  if (estado.autoRefresh !== ligado) {
+    estado.autoRefresh = ligado;
+
+    registrarEvento(
+      `Atualização automática ${ligado ? "ligada" : "desligada"} (${motivo})`
+    );
+  }
+
+  const checkbox = $("auto-refresh");
+  const intervalo = $("intervalo");
+
+  if (checkbox) checkbox.checked = ligado;
+  if (intervalo) intervalo.disabled = !ligado;
+
+  configurarTemporizador();
   desenhar();
 }
 
 function desligarTudo() {
   if (estado.modoAuto) {
-    estado.modoAuto = false;
-    registrarEvento("Modo automático desligado");
+    mudarModoAuto(false, "desligar tudo");
   }
 
   definir("arLigado", false, "desligar tudo");
@@ -188,7 +218,10 @@ function desligarTudo() {
 }
 
 function limparHistorico() {
+  // Mantém a leitura mais recente para preservar o estado atual do gráfico.
   estado.historico = estado.historico.slice(-1);
+
+  registrarEvento("Histórico de sensores limpo");
   desenhar();
 }
 
@@ -222,10 +255,14 @@ function baixarCsv() {
   link.remove();
 
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+  registrarEvento("Histórico baixado em CSV");
+  desenhar();
 }
 
 function configurarTemporizador() {
   clearInterval(temporizador);
+  temporizador = null;
 
   if (estado.autoRefresh) {
     temporizador = setInterval(
@@ -363,18 +400,24 @@ function desenharGrafico(canvas, valores, cor, casas = 0) {
 }
 
 function desenharGraficos() {
-  const sensor = $("sensor-grafico").value;
+  const seletor = $("sensor-grafico");
+  const graficoSensor = $("grafico-sensor");
+  const graficoPessoas = $("grafico-pessoas");
+
+  if (!seletor || !graficoSensor || !graficoPessoas) return;
+
+  const sensor = seletor.value;
 
   desenharGrafico(
-    $("grafico-sensor"),
-    estado.historico.map((l) => l[sensor]),
+    graficoSensor,
+    estado.historico.map((leitura) => leitura[sensor]),
     "#2563eb",
     sensor === "temperatura" ? 1 : 0
   );
 
   desenharGrafico(
-    $("grafico-pessoas"),
-    estado.historico.map((l) => l.pessoas),
+    graficoPessoas,
+    estado.historico.map((leitura) => leitura.pessoas),
     "#06b6d4",
     0
   );
@@ -386,6 +429,7 @@ function desenharGraficos() {
 
 function mostrarDelta(id, valor, texto, inverso = false) {
   const elemento = $(id);
+  if (!elemento) return;
 
   if (valor === null) {
     elemento.textContent = "";
@@ -405,6 +449,7 @@ function mostrarDelta(id, valor, texto, inverso = false) {
 
 function mostrarPill(id, ligado, textoLigado, textoDesligado) {
   const elemento = $(id);
+  if (!elemento) return;
 
   elemento.className = `pill ${ligado ? "on" : "off"}`;
   elemento.textContent = ligado
@@ -415,7 +460,8 @@ function mostrarPill(id, ligado, textoLigado, textoDesligado) {
 function desenhar() {
   const s = estado.sensores;
   const hist = estado.historico;
-  if (!s) return;
+
+  if (!s || hist.length === 0) return;
 
   const alertas = calcularAlertas(s);
 
@@ -466,60 +512,82 @@ function desenhar() {
 
   // Alertas.
   const caixa = $("alertas");
-  caixa.replaceChildren();
 
-  if (alertas.length === 0) {
-    const div = document.createElement("div");
-    div.className = "alerta ok";
-    div.textContent = "Tudo normal";
-    caixa.appendChild(div);
-  } else {
-    alertas.forEach((texto) => {
+  if (caixa) {
+    caixa.replaceChildren();
+
+    if (alertas.length === 0) {
       const div = document.createElement("div");
-      div.className = "alerta aviso";
-      div.textContent = texto;
+      div.className = "alerta ok";
+      div.textContent = "Tudo normal";
       caixa.appendChild(div);
-    });
+    } else {
+      alertas.forEach((texto) => {
+        const div = document.createElement("div");
+        div.className = "alerta aviso";
+        div.textContent = texto;
+        caixa.appendChild(div);
+      });
+    }
   }
 
   // Controles.
-  $("modo-auto").checked = estado.modoAuto;
+  const modoAuto = $("modo-auto");
+  if (modoAuto) modoAuto.checked = estado.modoAuto;
+
+  const autoRefresh = $("auto-refresh");
+  if (autoRefresh) autoRefresh.checked = estado.autoRefresh;
+
+  const intervalo = $("intervalo");
+  if (intervalo) intervalo.disabled = !estado.autoRefresh;
 
   mostrarPill(
-    "pill-ar", estado.arLigado, "LIGADO", "DESLIGADO"
+    "pill-ar",
+    estado.arLigado,
+    "LIGADO",
+    "DESLIGADO"
   );
 
   mostrarPill(
-    "pill-luz", estado.luzLigada, "LIGADA", "DESLIGADA"
+    "pill-luz",
+    estado.luzLigada,
+    "LIGADA",
+    "DESLIGADA"
   );
 
-  $("btn-ar").disabled = estado.modoAuto;
-  $("btn-luz").disabled = estado.modoAuto;
+  const btnAr = $("btn-ar");
+  const btnLuz = $("btn-luz");
+
+  if (btnAr) btnAr.disabled = estado.modoAuto;
+  if (btnLuz) btnLuz.disabled = estado.modoAuto;
 
   // Registro de eventos.
   const lista = $("lista-eventos");
-  lista.replaceChildren();
 
-  if (estado.eventos.length === 0) {
-    const p = document.createElement("p");
-    p.className = "vazio";
-    p.textContent = "Nenhum evento ainda.";
-    lista.appendChild(p);
-  } else {
-    estado.eventos.forEach((evento) => {
-      const div = document.createElement("div");
-      div.className = "evento";
+  if (lista) {
+    lista.replaceChildren();
 
-      const b = document.createElement("b");
-      b.textContent = evento.hora;
+    if (estado.eventos.length === 0) {
+      const p = document.createElement("p");
+      p.className = "vazio";
+      p.textContent = "Nenhum evento ainda.";
+      lista.appendChild(p);
+    } else {
+      estado.eventos.forEach((evento) => {
+        const div = document.createElement("div");
+        div.className = "evento";
 
-      div.appendChild(b);
-      div.appendChild(
-        document.createTextNode(` ${evento.texto}`)
-      );
+        const b = document.createElement("b");
+        b.textContent = evento.hora;
 
-      lista.appendChild(div);
-    });
+        div.appendChild(b);
+        div.appendChild(
+          document.createTextNode(` ${evento.texto}`)
+        );
+
+        lista.appendChild(div);
+      });
+    }
   }
 
   desenharGraficos();
@@ -597,17 +665,20 @@ class VozController {
       const resultados = Array.from(evento.results);
 
       const texto = resultados
-        .map((r) => r[0].transcript)
+        .map((resultado) => resultado[0].transcript)
         .join(" ");
 
       this.onTranscript(texto);
 
       // Só executa comandos quando a fala for finalizada.
-      const finais = resultados.filter((r) => r.isFinal);
+      const finais = resultados.filter(
+        (resultado) => resultado.isFinal
+      );
+
       if (!finais.length) return;
 
       const falaFinal = finais
-        .map((r) => r[0].transcript)
+        .map((resultado) => resultado[0].transcript)
         .join(" ");
 
       const comando = VozController.identificarComando(falaFinal);
@@ -626,15 +697,83 @@ class VozController {
       .toLowerCase()
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "")
-      .replace(/[^a-z0-9\s-]/g, " ")
+      .replace(/[^a-z0-9\s]/g, " ")
       .replace(/\s+/g, " ")
       .trim();
 
-    const ligar = /\b(ligar|liga|acender|acenda)\b/.test(frase);
-    const desligar = /\b(desligar|desliga|apagar|apague)\b/.test(frase);
+    const tem = (...termos) =>
+      termos.some((termo) => frase.includes(termo));
 
-    const ar = /\b(ar|ar-condicionado|climatizacao)\b/.test(frase);
-    const luz = /\b(luz|luzes|iluminacao)\b/.test(frase);
+    const desligar = tem(
+      "desligar",
+      "desliga",
+      "desative",
+      "desativar",
+      "parar",
+      "pare",
+      "desabilitar"
+    );
+
+    const ligar = tem(
+      "ligar",
+      "liga",
+      "ative",
+      "ativar",
+      "habilitar",
+      "iniciar"
+    );
+
+    const historico = tem(
+      "historico",
+      "historia",
+      "csv",
+      "registros"
+    );
+
+    const atualizacao = tem(
+      "atualizacao",
+      "atualizacoes",
+      "atualizar automaticamente",
+      "atualizacao automatica"
+    );
+
+    const modoAutomatico =
+      tem("automatico", "automatica", "automacao") ||
+      (tem("modo") && tem("auto"));
+
+    // Ações de histórico são verificadas antes dos comandos genéricos.
+    if (
+      historico &&
+      tem("baixar", "baixa", "exportar", "exporte", "download")
+    ) {
+      return "baixar_historico";
+    }
+
+    if (
+      historico &&
+      tem("limpar", "limpa", "apagar", "apague", "excluir", "remover")
+    ) {
+      return "limpar_historico";
+    }
+
+    if (atualizacao && desligar) {
+      return "desligar_atualizacao";
+    }
+
+    if (atualizacao && ligar) {
+      return "ligar_atualizacao";
+    }
+
+    if (modoAutomatico && desligar) {
+      return "desligar_modo_auto";
+    }
+
+    if (modoAutomatico && ligar) {
+      return "ligar_modo_auto";
+    }
+
+    const ar = tem("ar", "condicionado", "climatizacao");
+    const luz = tem("luz", "luzes", "iluminacao");
 
     // Desligar é analisado antes de ligar.
     if (desligar && ar) return "desligar_ar";
@@ -642,7 +781,9 @@ class VozController {
     if (ligar && ar) return "ligar_ar";
     if (ligar && luz) return "ligar_luz";
 
-    if (/\b(simular|atualizar|atualize)\b/.test(frase)) {
+    if (
+      tem("simular", "simule", "simulacao", "nova deteccao")
+    ) {
       return "simular";
     }
 
@@ -661,7 +802,13 @@ class VozController {
   }
 
   parar() {
-    this.reconhecimento.stop();
+    if (!this.ativo) return;
+
+    try {
+      this.reconhecimento.stop();
+    } catch (erro) {
+      this.onStatus(`Não foi possível parar: ${erro.message}`);
+    }
   }
 }
 
@@ -674,6 +821,8 @@ function configurarVoz() {
   const botao = $("btn-voz");
   const status = $("voz-status");
   const transcricao = $("voz-texto");
+
+  if (!botao || !status || !transcricao) return;
 
   if (!VozController.suportado()) {
     botao.disabled = true;
@@ -699,7 +848,9 @@ function configurarVoz() {
     },
 
     onSpeech(falando) {
-      widget.classList.toggle("falando", falando);
+      if (widget) {
+        widget.classList.toggle("falando", falando);
+      }
     },
 
     onCommand(comando) {
@@ -710,12 +861,12 @@ function configurarVoz() {
         "desligar_luz"
       ];
 
-      // Interrompe a automação se houver comando manual.
-      if (comandosManuais.includes(comando) && estado.modoAuto) {
-        estado.modoAuto = false;
-        registrarEvento(
-          "Modo automático desligado (comando de voz)"
-        );
+      // Um comando manual interrompe o modo automático.
+      if (
+        comandosManuais.includes(comando) &&
+        estado.modoAuto
+      ) {
+        mudarModoAuto(false, "comando de voz");
       }
 
       switch (comando) {
@@ -739,6 +890,30 @@ function configurarVoz() {
           desenhar();
           break;
 
+        case "ligar_modo_auto":
+          mudarModoAuto(true, "comando de voz");
+          break;
+
+        case "desligar_modo_auto":
+          mudarModoAuto(false, "comando de voz");
+          break;
+
+        case "ligar_atualizacao":
+          mudarAtualizacaoAutomatica(true, "comando de voz");
+          break;
+
+        case "desligar_atualizacao":
+          mudarAtualizacaoAutomatica(false, "comando de voz");
+          break;
+
+        case "baixar_historico":
+          baixarCsv();
+          break;
+
+        case "limpar_historico":
+          limparHistorico();
+          break;
+
         case "simular":
           atualizarAgora();
           break;
@@ -760,44 +935,46 @@ function configurarVoz() {
 // ==========================================
 
 function iniciar() {
-  $("temp-alta").addEventListener("input", (e) => {
-    estado.tempAlta = Number(e.target.value);
+  $("temp-alta").addEventListener("input", (evento) => {
+    estado.tempAlta = Number(evento.target.value);
     $("temp-alta-valor").textContent = estado.tempAlta;
     desenhar();
   });
 
-  $("lux-baixa").addEventListener("input", (e) => {
-    estado.luxBaixa = Number(e.target.value);
+  $("lux-baixa").addEventListener("input", (evento) => {
+    estado.luxBaixa = Number(evento.target.value);
     $("lux-baixa-valor").textContent = estado.luxBaixa;
     desenhar();
   });
 
-  $("auto-refresh").addEventListener("change", (e) => {
-    estado.autoRefresh = e.target.checked;
-    $("intervalo").disabled = !estado.autoRefresh;
-    configurarTemporizador();
+  $("auto-refresh").addEventListener("change", (evento) => {
+    mudarAtualizacaoAutomatica(evento.target.checked);
   });
 
-  $("intervalo").addEventListener("input", (e) => {
-    estado.intervalo = Number(e.target.value);
+  $("intervalo").addEventListener("input", (evento) => {
+    estado.intervalo = Number(evento.target.value);
     $("intervalo-valor").textContent = estado.intervalo;
     configurarTemporizador();
   });
 
   $("btn-atualizar").addEventListener(
-    "click", atualizarAgora
+    "click",
+    atualizarAgora
   );
 
   $("btn-baixar").addEventListener(
-    "click", baixarCsv
+    "click",
+    baixarCsv
   );
 
   $("btn-limpar").addEventListener(
-    "click", limparHistorico
+    "click",
+    limparHistorico
   );
 
   $("btn-desligar-tudo").addEventListener(
-    "click", desligarTudo
+    "click",
+    desligarTudo
   );
 
   $("btn-ar").addEventListener("click", () => {
@@ -808,12 +985,13 @@ function iniciar() {
     alternar("luzLigada");
   });
 
-  $("modo-auto").addEventListener("change", (e) => {
-    mudarModoAuto(e.target.checked);
+  $("modo-auto").addEventListener("change", (evento) => {
+    mudarModoAuto(evento.target.checked);
   });
 
   $("sensor-grafico").addEventListener(
-    "change", desenharGraficos
+    "change",
+    desenharGraficos
   );
 
   document.querySelectorAll(".aba-btn").forEach((botao) => {
