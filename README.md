@@ -17,7 +17,7 @@ Aplicação web demonstrativa para acompanhar condições de uma sala, visualiza
 
 ## Tecnologias
 
-HTML5, CSS3 e JavaScript puro, sem frameworks e sem necessidade de instalar dependências.
+HTML, CSS e JavaScript puro, sem frameworks e sem necessidade de instalar dependências.
 
 ## Como executar
 
