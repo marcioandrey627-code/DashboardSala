@@ -50,6 +50,55 @@ function arredondar(valor, casas = 1) {
   return Number(valor.toFixed(casas));
 }
 
+function lerVariavelCss(nome, fallback) {
+  const valor = getComputedStyle(document.documentElement)
+    .getPropertyValue(nome)
+    .trim();
+
+  return valor || fallback;
+}
+
+function atualizarControleTema() {
+  const temaClaro = document.documentElement.dataset.tema === "claro";
+  const botao = $("btn-tema");
+  const texto = $("tema-texto");
+  const corNavegador = document.querySelector('meta[name="theme-color"]');
+
+  if (texto) {
+    texto.textContent = temaClaro ? "Modo escuro" : "Modo claro";
+  }
+
+  if (botao) {
+    botao.setAttribute(
+      "aria-label",
+      temaClaro ? "Ativar modo escuro" : "Ativar modo claro"
+    );
+  }
+
+  if (corNavegador) {
+    corNavegador.setAttribute(
+      "content",
+      temaClaro ? "#eef3f8" : "#07111f"
+    );
+  }
+}
+
+function alternarTema() {
+  const temaAtual = document.documentElement.dataset.tema;
+  const proximoTema = temaAtual === "claro" ? "escuro" : "claro";
+
+  document.documentElement.dataset.tema = proximoTema;
+
+  try {
+    localStorage.setItem("tema", proximoTema);
+  } catch (erro) {
+    // O tema continua funcionando durante a sessão mesmo sem armazenamento.
+  }
+
+  atualizarControleTema();
+  requestAnimationFrame(desenharGraficos);
+}
+
 // ==========================================
 // SENSORES SIMULADOS
 // ==========================================
@@ -319,6 +368,13 @@ function desenharGrafico(canvas, valores, cor, casas = 0) {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
 
+  const corGrade = lerVariavelCss(
+    "--chart-grid",
+    "rgba(148, 175, 211, 0.15)"
+  );
+  const corTexto = lerVariavelCss("--chart-label", "#8395ad");
+  const fonteInterface = getComputedStyle(document.body).fontFamily;
+
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, largura, altura);
 
@@ -354,7 +410,7 @@ function desenharGrafico(canvas, valores, cor, casas = 0) {
   const y = (v) => margem.topo + h -
     ((v - minimo) / (maximo - minimo)) * h;
 
-  ctx.font = "12px sans-serif";
+  ctx.font = `500 11px ${fonteInterface}`;
   ctx.lineWidth = 1;
 
   // Grade e valores verticais.
@@ -362,13 +418,13 @@ function desenharGrafico(canvas, valores, cor, casas = 0) {
     const valor = minimo + ((maximo - minimo) * i) / 4;
     const py = y(valor);
 
-    ctx.strokeStyle = "rgba(148,163,184,0.35)";
+    ctx.strokeStyle = corGrade;
     ctx.beginPath();
     ctx.moveTo(margem.esquerda, py);
     ctx.lineTo(largura - margem.direita, py);
     ctx.stroke();
 
-    ctx.fillStyle = "#64748b";
+    ctx.fillStyle = corTexto;
     ctx.textAlign = "right";
     ctx.textBaseline = "middle";
     ctx.fillText(
@@ -378,9 +434,30 @@ function desenharGrafico(canvas, valores, cor, casas = 0) {
     );
   }
 
-  // Linha do gráfico.
+  // Área sutil sob a linha para reforçar a leitura sem poluir o gráfico.
+  ctx.save();
+  ctx.globalAlpha = 0.12;
+  ctx.fillStyle = cor;
+  ctx.beginPath();
+  ctx.moveTo(x(0), margem.topo + h);
+
+  valores.forEach((valor, i) => {
+    ctx.lineTo(x(i), y(valor));
+  });
+
+  ctx.lineTo(x(valores.length - 1), margem.topo + h);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+
+  // Linha principal.
+  ctx.save();
   ctx.strokeStyle = cor;
-  ctx.lineWidth = 2;
+  ctx.lineWidth = 2.4;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.shadowColor = cor;
+  ctx.shadowBlur = 8;
   ctx.beginPath();
 
   valores.forEach((valor, i) => {
@@ -389,14 +466,18 @@ function desenharGrafico(canvas, valores, cor, casas = 0) {
   });
 
   ctx.stroke();
+  ctx.restore();
 
   // Ponto mais recente.
   const ultimo = valores.length - 1;
 
+  ctx.strokeStyle = lerVariavelCss("--superficie", "#0d192b");
+  ctx.lineWidth = 3;
   ctx.fillStyle = cor;
   ctx.beginPath();
-  ctx.arc(x(ultimo), y(valores[ultimo]), 4, 0, Math.PI * 2);
+  ctx.arc(x(ultimo), y(valores[ultimo]), 4.5, 0, Math.PI * 2);
   ctx.fill();
+  ctx.stroke();
 }
 
 function desenharGraficos() {
@@ -407,18 +488,23 @@ function desenharGraficos() {
   if (!seletor || !graficoSensor || !graficoPessoas) return;
 
   const sensor = seletor.value;
+  const variaveisDeCor = {
+    temperatura: "--chart-temperatura",
+    umidade: "--chart-umidade",
+    luminosidade: "--chart-luminosidade"
+  };
 
   desenharGrafico(
     graficoSensor,
     estado.historico.map((leitura) => leitura[sensor]),
-    "#2563eb",
+    lerVariavelCss(variaveisDeCor[sensor], "#328cff"),
     sensor === "temperatura" ? 1 : 0
   );
 
   desenharGrafico(
     graficoPessoas,
     estado.historico.map((leitura) => leitura.pessoas),
-    "#06b6d4",
+    lerVariavelCss("--chart-pessoas", "#45d6a2"),
     0
   );
 }
@@ -453,8 +539,8 @@ function mostrarPill(id, ligado, textoLigado, textoDesligado) {
 
   elemento.className = `pill ${ligado ? "on" : "off"}`;
   elemento.textContent = ligado
-    ? `🟢 ${textoLigado}`
-    : `⚫ ${textoDesligado}`;
+    ? textoLigado
+    : textoDesligado;
 }
 
 function desenhar() {
@@ -465,16 +551,23 @@ function desenhar() {
 
   const alertas = calcularAlertas(s);
 
-  $("banner-status").textContent = alertas.length
-    ? `🟠 ${alertas.length} alerta(s)`
-    : "🟢 Tudo normal";
+  const bannerStatus = $("banner-status");
+  const bannerModo = $("banner-modo");
+  const bannerHora = $("banner-hora");
 
-  $("banner-modo").textContent = estado.modoAuto
-    ? "🤖 Automático"
-    : "🖐️ Manual";
+  bannerStatus.textContent = alertas.length
+    ? `${alertas.length} alerta(s)`
+    : "Tudo normal";
+  bannerStatus.classList.toggle("status-alerta", alertas.length > 0);
+  bannerStatus.classList.toggle("status-ok", alertas.length === 0);
 
-  $("banner-hora").textContent =
-    `🕒 ${hist[hist.length - 1].hora.toLocaleTimeString("pt-BR")}`;
+  bannerModo.textContent = estado.modoAuto
+    ? "Modo automático"
+    : "Modo manual";
+  bannerModo.classList.toggle("status-auto", estado.modoAuto);
+
+  bannerHora.textContent =
+    `Atualizado às ${hist[hist.length - 1].hora.toLocaleTimeString("pt-BR")}`;
 
   $("m-temp").textContent = `${s.temperatura.toFixed(1)} °C`;
   $("m-umid").textContent = `${s.umidade} %`;
@@ -558,8 +651,15 @@ function desenhar() {
   const btnAr = $("btn-ar");
   const btnLuz = $("btn-luz");
 
-  if (btnAr) btnAr.disabled = estado.modoAuto;
-  if (btnLuz) btnLuz.disabled = estado.modoAuto;
+  if (btnAr) {
+    btnAr.disabled = estado.modoAuto;
+    btnAr.textContent = estado.arLigado ? "Desligar ar" : "Ligar ar";
+  }
+
+  if (btnLuz) {
+    btnLuz.disabled = estado.modoAuto;
+    btnLuz.textContent = estado.luzLigada ? "Desligar luz" : "Ligar luz";
+  }
 
   // Registro de eventos.
   const lista = $("lista-eventos");
@@ -595,17 +695,18 @@ function desenhar() {
 
 function mostrarAba(nome) {
   document.querySelectorAll(".aba-btn").forEach((botao) => {
-    botao.classList.toggle(
-      "ativa",
-      botao.dataset.aba === nome
-    );
+    const ativa = botao.dataset.aba === nome;
+
+    botao.classList.toggle("ativa", ativa);
+    botao.setAttribute("aria-selected", String(ativa));
+    botao.tabIndex = ativa ? 0 : -1;
   });
 
   document.querySelectorAll(".aba").forEach((secao) => {
-    secao.classList.toggle(
-      "ativa",
-      secao.id === `aba-${nome}`
-    );
+    const ativa = secao.id === `aba-${nome}`;
+
+    secao.classList.toggle("ativa", ativa);
+    secao.hidden = !ativa;
   });
 
   desenharGraficos();
@@ -942,6 +1043,9 @@ function configurarVoz() {
 // ==========================================
 
 function iniciar() {
+  atualizarControleTema();
+  $("btn-tema").addEventListener("click", alternarTema);
+
   $("temp-alta").addEventListener("input", (evento) => {
     estado.tempAlta = Number(evento.target.value);
     $("temp-alta-valor").textContent = estado.tempAlta;
@@ -1001,9 +1105,43 @@ function iniciar() {
     desenharGraficos
   );
 
-  document.querySelectorAll(".aba-btn").forEach((botao) => {
+  const botoesAbas = Array.from(
+    document.querySelectorAll(".aba-btn")
+  );
+
+  botoesAbas.forEach((botao, indice) => {
     botao.addEventListener("click", () => {
       mostrarAba(botao.dataset.aba);
+    });
+
+    botao.addEventListener("keydown", (evento) => {
+      const teclasNavegacao = [
+        "ArrowRight",
+        "ArrowDown",
+        "ArrowLeft",
+        "ArrowUp",
+        "Home",
+        "End"
+      ];
+
+      if (!teclasNavegacao.includes(evento.key)) return;
+
+      evento.preventDefault();
+
+      let proximoIndice = indice;
+
+      if (evento.key === "Home") proximoIndice = 0;
+      if (evento.key === "End") proximoIndice = botoesAbas.length - 1;
+      if (["ArrowRight", "ArrowDown"].includes(evento.key)) {
+        proximoIndice = (indice + 1) % botoesAbas.length;
+      }
+      if (["ArrowLeft", "ArrowUp"].includes(evento.key)) {
+        proximoIndice = (indice - 1 + botoesAbas.length) % botoesAbas.length;
+      }
+
+      const proximoBotao = botoesAbas[proximoIndice];
+      proximoBotao.focus();
+      mostrarAba(proximoBotao.dataset.aba);
     });
   });
 
@@ -1011,6 +1149,7 @@ function iniciar() {
 
   atualizarSensores();
   desenhar();
+  mostrarAba("sensores");
   configurarVoz();
 }
 
