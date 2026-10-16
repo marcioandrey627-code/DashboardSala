@@ -27,7 +27,7 @@
     --marca-forte: #1672e8;
     --marca-suave: rgba(50, 140, 255, 0.14);
     --marca-brilho: #69d5ff;
-    --senai: #ef3340;
+    --senai: #4762d6f1;
     --sucesso: #3ddc97;
     --sucesso-suave: rgba(61, 220, 151, 0.12);
     --aviso: #f6b94e;
@@ -78,7 +78,7 @@
     --marca-forte: #075cad;
     --marca-suave: rgba(17, 109, 204, 0.1);
     --marca-brilho: #1685e8;
-    --senai: #d91f32;
+    --senai: #0732f0;
     --sucesso: #168861;
     --sucesso-suave: rgba(22, 136, 97, 0.1);
     --aviso: #b46e0c;
@@ -306,7 +306,7 @@ input:disabled {
     flex: 0 0 auto;
     place-items: center;
     color: #ffffff;
-    background: linear-gradient(145deg, var(--senai), #b91429);
+    background: linear-gradient(145deg, var(--senai), #0575f5);
     border: 1px solid rgba(255, 255, 255, 0.18);
     border-radius: 0.9rem;
     box-shadow: 0 10px 24px rgba(239, 51, 64, 0.2);
