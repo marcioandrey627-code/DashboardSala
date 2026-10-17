@@ -50,53 +50,11 @@ function arredondar(valor, casas = 1) {
   return Number(valor.toFixed(casas));
 }
 
-function lerVariavelCss(nome, fallback) {
+function corCss(nome, fallback) {
   const valor = getComputedStyle(document.documentElement)
     .getPropertyValue(nome)
     .trim();
-
   return valor || fallback;
-}
-
-function atualizarControleTema() {
-  const temaClaro = document.documentElement.dataset.tema === "claro";
-  const botao = $("btn-tema");
-  const texto = $("tema-texto");
-  const corNavegador = document.querySelector('meta[name="theme-color"]');
-
-  if (texto) {
-    texto.textContent = temaClaro ? "Modo escuro" : "Modo claro";
-  }
-
-  if (botao) {
-    botao.setAttribute(
-      "aria-label",
-      temaClaro ? "Ativar modo escuro" : "Ativar modo claro"
-    );
-  }
-
-  if (corNavegador) {
-    corNavegador.setAttribute(
-      "content",
-      temaClaro ? "#eef3f8" : "#07111f"
-    );
-  }
-}
-
-function alternarTema() {
-  const temaAtual = document.documentElement.dataset.tema;
-  const proximoTema = temaAtual === "claro" ? "escuro" : "claro";
-
-  document.documentElement.dataset.tema = proximoTema;
-
-  try {
-    localStorage.setItem("tema", proximoTema);
-  } catch (erro) {
-    // O tema continua funcionando durante a sessão mesmo sem armazenamento.
-  }
-
-  atualizarControleTema();
-  requestAnimationFrame(desenharGraficos);
 }
 
 // ==========================================
@@ -177,15 +135,17 @@ function aplicarAutomacao(leitura) {
   }
 
   // Histerese: evita ligar e desligar sem parar.
-  if (leitura.temperatura > estado.tempAlta) {
+  if (leitura.temperatura >= estado.tempAlta) {
     definir("arLigado", true, "temperatura alta");
-  } else if (leitura.temperatura < estado.tempAlta - 2) {
+  } else if (leitura.temperatura <= estado.tempAlta - 2) {
     definir("arLigado", false, "temperatura normal");
   }
 
-  if (leitura.luminosidade < estado.luxBaixa) {
+  if (leitura.luminosidade <= estado.luxBaixa) {
     definir("luzLigada", true, "pouca luz");
-  } else if (leitura.luminosidade > estado.luxBaixa + 20) {
+  } else if (
+    leitura.luminosidade >= Math.min(estado.luxBaixa + 20, 100)
+  ) {
     definir("luzLigada", false, "luz suficiente");
   }
 }
@@ -204,6 +164,35 @@ function atualizarSensores() {
 
   if (estado.modoAuto) {
     aplicarAutomacao(estado.sensores);
+  }
+}
+
+function inicializarHistorico(quantidade = 16) {
+  const total = limitar(
+    Math.trunc(quantidade),
+    2,
+    LIMITE_HISTORICO
+  );
+  const agora = Date.now();
+  const intervaloMs = Math.max(estado.intervalo, 2) * 1000;
+
+  estado.historico = [];
+  let leitura = null;
+
+  for (let indice = 0; indice < total; indice++) {
+    leitura = lerSensores(leitura);
+    estado.historico.push({
+      hora: new Date(
+        agora - (total - indice - 1) * intervaloMs
+      ),
+      ...leitura
+    });
+  }
+
+  estado.sensores = leitura;
+
+  if (estado.modoAuto && leitura) {
+    aplicarAutomacao(leitura);
   }
 }
 
@@ -274,38 +263,174 @@ function limparHistorico() {
   desenhar();
 }
 
-function baixarCsv() {
-  const linhas = [
-    "hora,temperatura,umidade,luminosidade,pessoas"
+function baixarHistoricoExcel() {
+  const codificador = new TextEncoder();
+  const escaparXml = (valor) => String(valor ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+  const escrever16 = (bytes, posicao, valor) => {
+    bytes[posicao] = valor & 255;
+    bytes[posicao + 1] = (valor >>> 8) & 255;
+  };
+  const escrever32 = (bytes, posicao, valor) => {
+    bytes[posicao] = valor & 255;
+    bytes[posicao + 1] = (valor >>> 8) & 255;
+    bytes[posicao + 2] = (valor >>> 16) & 255;
+    bytes[posicao + 3] = (valor >>> 24) & 255;
+  };
+  const tabelaCrc = Array.from({ length: 256 }, (_, indice) => {
+    let valor = indice;
+    for (let bit = 0; bit < 8; bit++) {
+      valor = (valor & 1) ? (0xedb88320 ^ (valor >>> 1)) : (valor >>> 1);
+    }
+    return valor >>> 0;
+  });
+  const calcularCrc = (dados) => {
+    let crc = 0xffffffff;
+    for (const byte of dados) {
+      crc = tabelaCrc[(crc ^ byte) & 255] ^ (crc >>> 8);
+    }
+    return (crc ^ 0xffffffff) >>> 0;
+  };
+  const criarArquivoZip = (arquivos) => {
+    const partes = [];
+    const diretorio = [];
+    let deslocamento = 0;
+
+    for (const [nome, conteudo] of arquivos) {
+      const nomeBytes = codificador.encode(nome);
+      const dados = codificador.encode(conteudo);
+      const crc = calcularCrc(dados);
+      const cabecalho = new Uint8Array(30);
+
+      escrever32(cabecalho, 0, 0x04034b50);
+      escrever16(cabecalho, 4, 20);
+      escrever16(cabecalho, 26, nomeBytes.length);
+      escrever32(cabecalho, 14, crc);
+      escrever32(cabecalho, 18, dados.length);
+      escrever32(cabecalho, 22, dados.length);
+
+      partes.push(cabecalho, nomeBytes, dados);
+      diretorio.push({ nomeBytes, crc, tamanho: dados.length, deslocamento });
+      deslocamento += cabecalho.length + nomeBytes.length + dados.length;
+    }
+
+    const diretorioPartes = diretorio.map((arquivo) => {
+      const cabecalho = new Uint8Array(46);
+      escrever32(cabecalho, 0, 0x02014b50);
+      escrever16(cabecalho, 4, 20);
+      escrever16(cabecalho, 6, 20);
+      escrever16(cabecalho, 28, arquivo.nomeBytes.length);
+      escrever32(cabecalho, 16, arquivo.crc);
+      escrever32(cabecalho, 20, arquivo.tamanho);
+      escrever32(cabecalho, 24, arquivo.tamanho);
+      escrever32(cabecalho, 42, arquivo.deslocamento);
+      return [cabecalho, arquivo.nomeBytes];
+    });
+    const tamanhoDiretorio = diretorioPartes.reduce(
+      (total, partesDoArquivo) => total + partesDoArquivo[0].length + partesDoArquivo[1].length,
+      0
+    );
+    const fim = new Uint8Array(22);
+    escrever32(fim, 0, 0x06054b50);
+    escrever16(fim, 8, diretorio.length);
+    escrever16(fim, 10, diretorio.length);
+    escrever32(fim, 12, tamanhoDiretorio);
+    escrever32(fim, 16, deslocamento);
+
+    return new Blob(
+      [...partes, ...diretorioPartes.flat(), fim],
+      { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }
+    );
+  };
+  const celulaTexto = (coluna, linha, valor, estilo = 0) =>
+    `<c r="${coluna}${linha}" t="inlineStr"${estilo ? ` s="${estilo}"` : ""}><is><t>${escaparXml(valor)}</t></is></c>`;
+  const celulaNumero = (coluna, linha, valor) =>
+    `<c r="${coluna}${linha}"><v>${Number(valor)}</v></c>`;
+  const cabecalhos = [
+    "Data",
+    "Hora",
+    "Temperatura (°C)",
+    "Umidade (%)",
+    "Luminosidade (%)",
+    "Pessoas"
+  ];
+  const colunas = ["A", "B", "C", "D", "E", "F"];
+  const linhasPlanilha = [
+    `<row r="1">${cabecalhos.map((titulo, indice) => celulaTexto(colunas[indice], 1, titulo, 1)).join("")}</row>`
   ];
 
-  for (const leitura of estado.historico) {
-    linhas.push([
-      leitura.hora.toISOString(),
-      leitura.temperatura,
-      leitura.umidade,
-      leitura.luminosidade,
-      leitura.pessoas
-    ].join(","));
+  for (const [indice, leitura] of estado.historico.entries()) {
+    const linha = indice + 2;
+    const data = new Date(leitura.hora);
+    linhasPlanilha.push(`<row r="${linha}">${[
+      celulaTexto("A", linha, data.toLocaleDateString("pt-BR")),
+      celulaTexto("B", linha, data.toLocaleTimeString("pt-BR")),
+      celulaNumero("C", linha, leitura.temperatura.toFixed(1)),
+      celulaNumero("D", linha, leitura.umidade),
+      celulaNumero("E", linha, leitura.luminosidade),
+      celulaNumero("F", linha, leitura.pessoas)
+    ].join("")}</row>`);
   }
 
-  const blob = new Blob(
-    [linhas.join("\n")],
-    { type: "text/csv;charset=utf-8" }
-  );
+  const ultimaLinha = Math.max(2, estado.historico.length + 1);
+  const planilha = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <cols>
+    <col min="1" max="1" width="14" customWidth="1"/>
+    <col min="2" max="2" width="12" customWidth="1"/>
+    <col min="3" max="3" width="19" customWidth="1"/>
+    <col min="4" max="4" width="15" customWidth="1"/>
+    <col min="5" max="5" width="19" customWidth="1"/>
+    <col min="6" max="6" width="12" customWidth="1"/>
+  </cols>
+  <sheetData>${linhasPlanilha.join("")}</sheetData>
+  <autoFilter ref="A1:F${ultimaLinha}"/>
+</worksheet>`;
+  const estilos = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><color rgb="FFFFFFFF"/><sz val="11"/><name val="Calibri"/></font></fonts>
+  <fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF1F4E78"/><bgColor indexed="64"/></patternFill></fill></fills>
+  <borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>
+  <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+  <cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" applyFont="1" applyFill="1" applyAlignment="1" xfId="0"><alignment horizontal="center" vertical="center"/></xf></cellXfs>
+  <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
+</styleSheet>`;
+  const blob = criarArquivoZip([
+    ["[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`],
+    ["_rels/.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`],
+    ["xl/workbook.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Histórico de sensores" sheetId="1" r:id="rId1"/></sheets></workbook>`],
+    ["xl/_rels/workbook.xml.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`],
+    ["xl/styles.xml", estilos],
+    ["xl/worksheets/sheet1.xml", planilha]
+  ]);
+
+  const agora = new Date();
+  const dataArquivo = [
+    agora.getFullYear(),
+    String(agora.getMonth() + 1).padStart(2, "0"),
+    String(agora.getDate()).padStart(2, "0")
+  ].join("-");
+  const horaArquivo = [
+    String(agora.getHours()).padStart(2, "0"),
+    String(agora.getMinutes()).padStart(2, "0")
+  ].join("-");
 
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
 
   link.href = url;
-  link.download = "historico.csv";
+  link.download = `historico-sensores_${dataArquivo}_${horaArquivo}.xlsx`;
   document.body.appendChild(link);
   link.click();
   link.remove();
 
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 
-  registrarEvento("Histórico baixado em CSV");
+  registrarEvento("Histórico baixado em Excel");
   desenhar();
 }
 
@@ -328,23 +453,23 @@ function configurarTemporizador() {
 function calcularAlertas(sensor) {
   const alertas = [];
 
-  if (sensor.temperatura > estado.tempAlta) {
-    alertas.push("🌡️ Temperatura muito alta");
+  if (sensor.temperatura >= estado.tempAlta) {
+    alertas.push("Temperatura muito alta");
   }
 
   if (sensor.umidade < 40) {
-    alertas.push("💧 Ar muito seco");
+    alertas.push("Ar muito seco");
   }
 
   if (sensor.umidade > 75) {
-    alertas.push("💧 Umidade muito alta");
+    alertas.push("Umidade muito alta");
   }
 
   if (
     sensor.pessoas === 0 &&
     (estado.arLigado || estado.luzLigada)
   ) {
-    alertas.push("⚡ Equipamentos ligados com sala vazia");
+    alertas.push("Equipamentos ligados com sala vazia");
   }
 
   return alertas;
@@ -354,130 +479,371 @@ function calcularAlertas(sensor) {
 // GRÁFICOS
 // ==========================================
 
-function desenharGrafico(canvas, valores, cor, casas = 0) {
-  const largura = canvas.clientWidth;
-  const altura = canvas.clientHeight;
+const geometriaGraficos = new WeakMap();
+let redesenhoGraficosPendente = null;
+
+function corComAlpha(cor, alpha) {
+  const hex = cor.match(/^#([\da-f]{3}|[\da-f]{6})$/i);
+  if (hex) {
+    let valor = hex[1];
+    if (valor.length === 3) {
+      valor = valor.split("").map((parte) => parte + parte).join("");
+    }
+    const r = parseInt(valor.slice(0, 2), 16);
+    const g = parseInt(valor.slice(2, 4), 16);
+    const b = parseInt(valor.slice(4, 6), 16);
+    return "rgba(" + r + ", " + g + ", " + b + ", " + alpha + ")";
+  }
+
+  const rgb = cor.match(/^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/i);
+  if (rgb) {
+    return "rgba(" + rgb[1] + ", " + rgb[2] + ", " + rgb[3] + ", " + alpha + ")";
+  }
+
+  return cor;
+}
+
+function pontosBezierCatmull(pontos, tensao = 1) {
+  const comandos = [];
+  const fator = tensao / 6;
+
+  for (let i = 0; i < pontos.length - 1; i++) {
+    const p0 = pontos[Math.max(i - 1, 0)];
+    const p1 = pontos[i];
+    const p2 = pontos[i + 1];
+    const p3 = pontos[Math.min(i + 2, pontos.length - 1)];
+
+    const minimoY = Math.min(p1[1], p2[1]);
+    const maximoY = Math.max(p1[1], p2[1]);
+
+    comandos.push([
+      limitar(
+        p1[0] + (p2[0] - p0[0]) * fator,
+        p1[0],
+        p2[0]
+      ),
+      limitar(
+        p1[1] + (p2[1] - p0[1]) * fator,
+        minimoY,
+        maximoY
+      ),
+      limitar(
+        p2[0] - (p3[0] - p1[0]) * fator,
+        p1[0],
+        p2[0]
+      ),
+      limitar(
+        p2[1] - (p3[1] - p1[1]) * fator,
+        minimoY,
+        maximoY
+      ),
+      p2[0],
+      p2[1]
+    ]);
+  }
+
+  return comandos;
+}
+
+function calcularEscala(valores, amplitudeMinima, somenteInteiros) {
+  const menorDado = Math.min(...valores);
+  const maiorDado = Math.max(...valores);
+  const centro = (menorDado + maiorDado) / 2;
+  const amplitude = Math.max(maiorDado - menorDado, amplitudeMinima);
+
+  let minimo = Math.max(0, centro - amplitude / 2);
+  let maximo = minimo + amplitude;
+
+  if (maiorDado > maximo) {
+    maximo = maiorDado;
+    minimo = Math.max(0, maximo - amplitude);
+  }
+
+  if (somenteInteiros) {
+    minimo = Math.floor(minimo);
+    maximo = Math.ceil(maximo);
+    if (maximo - minimo < amplitudeMinima) {
+      maximo = minimo + amplitudeMinima;
+    }
+  }
+
+  return { minimo, maximo };
+}
+
+function formatarHorario(data, mostrarSegundos = true) {
+  return data.toLocaleTimeString("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: mostrarSegundos ? "2-digit" : undefined
+  });
+}
+
+function desenharGrafico(canvas, registros, configuracao) {
+  const {
+    chave,
+    cor,
+    casas = 0,
+    unidade = "",
+    amplitudeMinima = 4
+  } = configuracao;
+
+  const valores = registros.map((registro) => registro[chave]);
+  const horarios = registros.map((registro) => registro.hora);
+  const retangulo = canvas.getBoundingClientRect();
+  const largura = retangulo.width;
+  const altura = retangulo.height;
 
   if (!largura || !altura || !valores.length) return;
 
-  const dpr = window.devicePixelRatio || 1;
-
-  canvas.width = Math.round(largura * dpr);
-  canvas.height = Math.round(altura * dpr);
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = Math.max(1, Math.round(largura * dpr));
+  canvas.height = Math.max(1, Math.round(altura * dpr));
 
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
-
-  const corGrade = lerVariavelCss(
-    "--chart-grid",
-    "rgba(148, 175, 211, 0.15)"
-  );
-  const corTexto = lerVariavelCss("--chart-label", "#8395ad");
-  const fonteInterface = getComputedStyle(document.body).fontFamily;
 
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, largura, altura);
 
   const margem = {
-    esquerda: 46,
-    direita: 14,
-    topo: 14,
-    baixo: 20
+    esquerda: largura < 520 ? 44 : 54,
+    direita: 16,
+    topo: 24,
+    baixo: 34
   };
+  const areaLargura = largura - margem.esquerda - margem.direita;
+  const areaAltura = altura - margem.topo - margem.baixo;
 
-  const w = largura - margem.esquerda - margem.direita;
-  const h = altura - margem.topo - margem.baixo;
+  if (areaLargura <= 0 || areaAltura <= 0) return;
 
-  if (w <= 0 || h <= 0) return;
+  const escala = calcularEscala(
+    valores,
+    amplitudeMinima,
+    casas === 0
+  );
+  const minimo = escala.minimo;
+  const maximo = escala.maximo;
 
-  let minimo = Math.min(...valores);
-  let maximo = Math.max(...valores);
-
-  if (minimo === maximo) {
-    minimo -= 1;
-    maximo += 1;
-  }
-
-  const folga = (maximo - minimo) * 0.1;
-  minimo -= folga;
-  maximo += folga;
-
-  const x = (i) => margem.esquerda +
+  const xPos = (indice) => margem.esquerda +
     (valores.length === 1
-      ? w / 2
-      : (i / (valores.length - 1)) * w);
+      ? areaLargura / 2
+      : (indice / (valores.length - 1)) * areaLargura);
+  const yPos = (valor) => margem.topo + areaAltura -
+    ((valor - minimo) / (maximo - minimo)) * areaAltura;
 
-  const y = (v) => margem.topo + h -
-    ((v - minimo) / (maximo - minimo)) * h;
+  const corGrade = corCss("--grade", "rgba(148,163,184,0.16)");
+  const corSuave = corCss("--suave", "#64748b");
 
-  ctx.font = `500 11px ${fonteInterface}`;
+  ctx.fillStyle = corSuave;
+  ctx.font = "600 10px system-ui, sans-serif";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  ctx.fillText(unidade.trim(), margem.esquerda, 4);
+
+  const quantidadeGrades = 4;
   ctx.lineWidth = 1;
 
-  // Grade e valores verticais.
-  for (let i = 0; i <= 4; i++) {
-    const valor = minimo + ((maximo - minimo) * i) / 4;
-    const py = y(valor);
+  for (let i = 0; i <= quantidadeGrades; i++) {
+    const valor = minimo + ((maximo - minimo) * i) / quantidadeGrades;
+    const py = yPos(valor);
 
+    ctx.setLineDash([3, 6]);
     ctx.strokeStyle = corGrade;
     ctx.beginPath();
     ctx.moveTo(margem.esquerda, py);
     ctx.lineTo(largura - margem.direita, py);
     ctx.stroke();
+    ctx.setLineDash([]);
 
-    ctx.fillStyle = corTexto;
+    ctx.fillStyle = corSuave;
+    ctx.font = "11px system-ui, sans-serif";
     ctx.textAlign = "right";
     ctx.textBaseline = "middle";
-    ctx.fillText(
-      valor.toFixed(casas),
-      margem.esquerda - 6,
-      py
-    );
+    ctx.fillText(valor.toFixed(casas), margem.esquerda - 8, py);
   }
 
-  // Área sutil sob a linha para reforçar a leitura sem poluir o gráfico.
+  if (horarios.length > 1) {
+    const intervaloTotal = horarios[horarios.length - 1] - horarios[0];
+    const mostrarSegundos = intervaloTotal < 60 * 60 * 1000;
+    const quantidadeRotulos = Math.max(
+      2,
+      Math.min(5, Math.floor(areaLargura / 115), horarios.length - 1)
+    );
+
+    ctx.fillStyle = corSuave;
+    ctx.font = "10px system-ui, sans-serif";
+    ctx.textBaseline = "top";
+
+    for (let i = 0; i <= quantidadeRotulos; i++) {
+      const indice = Math.round(
+        (i / quantidadeRotulos) * (horarios.length - 1)
+      );
+      const px = xPos(indice);
+      ctx.textAlign = i === 0
+        ? "left"
+        : i === quantidadeRotulos
+          ? "right"
+          : "center";
+      ctx.fillText(
+        formatarHorario(horarios[indice], mostrarSegundos),
+        px,
+        margem.topo + areaAltura + 9
+      );
+    }
+  }
+
+  const pontos = valores.map((valor, indice) => [
+    xPos(indice),
+    yPos(valor)
+  ]);
+
   ctx.save();
-  ctx.globalAlpha = 0.12;
-  ctx.fillStyle = cor;
   ctx.beginPath();
-  ctx.moveTo(x(0), margem.topo + h);
+  ctx.rect(
+    margem.esquerda - 8,
+    margem.topo - 8,
+    areaLargura + 16,
+    areaAltura + 16
+  );
+  ctx.clip();
 
-  valores.forEach((valor, i) => {
-    ctx.lineTo(x(i), y(valor));
-  });
+  if (pontos.length > 1) {
+    const comandos = pontosBezierCatmull(pontos);
+    const gradienteArea = ctx.createLinearGradient(
+      0,
+      margem.topo,
+      0,
+      margem.topo + areaAltura
+    );
+    gradienteArea.addColorStop(0, corComAlpha(cor, 0.26));
+    gradienteArea.addColorStop(0.65, corComAlpha(cor, 0.07));
+    gradienteArea.addColorStop(1, corComAlpha(cor, 0));
 
-  ctx.lineTo(x(valores.length - 1), margem.topo + h);
-  ctx.closePath();
+    ctx.beginPath();
+    ctx.moveTo(pontos[0][0], pontos[0][1]);
+    comandos.forEach((comando) => {
+      ctx.bezierCurveTo(...comando);
+    });
+    ctx.lineTo(pontos[pontos.length - 1][0], margem.topo + areaAltura);
+    ctx.lineTo(pontos[0][0], margem.topo + areaAltura);
+    ctx.closePath();
+    ctx.fillStyle = gradienteArea;
+    ctx.fill();
+
+    const gradienteLinha = ctx.createLinearGradient(
+      margem.esquerda,
+      0,
+      largura - margem.direita,
+      0
+    );
+    gradienteLinha.addColorStop(0, corComAlpha(cor, 0.65));
+    gradienteLinha.addColorStop(0.55, cor);
+    gradienteLinha.addColorStop(1, cor);
+
+    ctx.beginPath();
+    ctx.moveTo(pontos[0][0], pontos[0][1]);
+    comandos.forEach((comando) => {
+      ctx.bezierCurveTo(...comando);
+    });
+    ctx.strokeStyle = gradienteLinha;
+    ctx.lineWidth = 2.5;
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    ctx.stroke();
+
+    const passoMarcador = Math.max(1, Math.ceil(pontos.length / 24));
+    pontos.slice(0, -1).forEach((ponto, indice) => {
+      if (indice % passoMarcador !== 0) return;
+      ctx.beginPath();
+      ctx.arc(ponto[0], ponto[1], 2, 0, Math.PI * 2);
+      ctx.fillStyle = corComAlpha(cor, 0.72);
+      ctx.fill();
+    });
+  }
+
+  const ultimoPonto = pontos[pontos.length - 1];
+  const halo = ctx.createRadialGradient(
+    ultimoPonto[0],
+    ultimoPonto[1],
+    2,
+    ultimoPonto[0],
+    ultimoPonto[1],
+    13
+  );
+  halo.addColorStop(0, corComAlpha(cor, 0.42));
+  halo.addColorStop(1, corComAlpha(cor, 0));
+
+  ctx.beginPath();
+  ctx.arc(ultimoPonto[0], ultimoPonto[1], 13, 0, Math.PI * 2);
+  ctx.fillStyle = halo;
   ctx.fill();
-  ctx.restore();
 
-  // Linha principal.
-  ctx.save();
-  ctx.strokeStyle = cor;
-  ctx.lineWidth = 2.4;
-  ctx.lineCap = "round";
-  ctx.lineJoin = "round";
-  ctx.shadowColor = cor;
-  ctx.shadowBlur = 8;
   ctx.beginPath();
-
-  valores.forEach((valor, i) => {
-    if (i === 0) ctx.moveTo(x(i), y(valor));
-    else ctx.lineTo(x(i), y(valor));
-  });
-
+  ctx.arc(ultimoPonto[0], ultimoPonto[1], 4.5, 0, Math.PI * 2);
+  ctx.fillStyle = cor;
+  ctx.fill();
+  ctx.strokeStyle = "rgba(255,255,255,0.9)";
+  ctx.lineWidth = 1.5;
   ctx.stroke();
   ctx.restore();
 
-  // Ponto mais recente.
-  const ultimo = valores.length - 1;
+  geometriaGraficos.set(canvas, {
+    pontos,
+    valores,
+    horarios,
+    margem,
+    areaLargura,
+    casas,
+    unidade,
+    cor
+  });
+}
 
-  ctx.strokeStyle = lerVariavelCss("--superficie", "#0d192b");
-  ctx.lineWidth = 3;
-  ctx.fillStyle = cor;
-  ctx.beginPath();
-  ctx.arc(x(ultimo), y(valores[ultimo]), 4.5, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.stroke();
+function atualizarKpisGrafico(valores, sensor) {
+  if (!valores.length) return;
+
+  const casas = sensor === "temperatura" ? 1 : 0;
+  const unidades = {
+    temperatura: " °C",
+    umidade: " %",
+    luminosidade: " %"
+  };
+  const unidade = unidades[sensor] || "";
+  const minimo = Math.min(...valores);
+  const maximo = Math.max(...valores);
+  const media = valores.reduce((soma, valor) => soma + valor, 0) / valores.length;
+  const atual = valores[valores.length - 1];
+  const anterior = valores.length > 1
+    ? valores[valores.length - 2]
+    : atual;
+  const diferenca = atual - anterior;
+
+  const preencher = (id, texto) => {
+    const elemento = $(id);
+    if (elemento) elemento.textContent = texto;
+  };
+
+  preencher("graf-kpi-atual", atual.toFixed(casas) + unidade);
+  preencher("graf-kpi-min", minimo.toFixed(casas) + unidade);
+  preencher("graf-kpi-med", media.toFixed(casas) + unidade);
+  preencher("graf-kpi-max", maximo.toFixed(casas) + unidade);
+
+  const tendencia = $("graf-kpi-tend-texto");
+  const tendenciaPai = $("graf-kpi-tend");
+
+  if (tendencia && tendenciaPai) {
+    tendencia.textContent = diferenca > 0.05
+      ? "Subindo"
+      : diferenca < -0.05
+        ? "Caindo"
+        : "Estável";
+    tendenciaPai.className = "kpi-valor kpi-tendencia " +
+      (diferenca > 0.05
+        ? "tend-subindo"
+        : diferenca < -0.05
+          ? "tend-caindo"
+          : "tend-estavel");
+  }
 }
 
 function desenharGraficos() {
@@ -487,26 +853,151 @@ function desenharGraficos() {
 
   if (!seletor || !graficoSensor || !graficoPessoas) return;
 
-  const sensor = seletor.value;
-  const variaveisDeCor = {
-    temperatura: "--chart-temperatura",
-    umidade: "--chart-umidade",
-    luminosidade: "--chart-luminosidade"
+  const configuracoes = {
+    temperatura: {
+      chave: "temperatura",
+      cor: corCss("--grafico-1", "#22d3ee"),
+      casas: 1,
+      unidade: "°C",
+      amplitudeMinima: 4
+    },
+    umidade: {
+      chave: "umidade",
+      cor: corCss("--grafico-1", "#22d3ee"),
+      casas: 0,
+      unidade: "%",
+      amplitudeMinima: 10
+    },
+    luminosidade: {
+      chave: "luminosidade",
+      cor: corCss("--grafico-1", "#22d3ee"),
+      casas: 0,
+      unidade: "%",
+      amplitudeMinima: 10
+    }
   };
+
+  const sensor = seletor.value;
+  const configuracao = configuracoes[sensor] || configuracoes.temperatura;
+  const valoresSensor = estado.historico.map(
+    (leitura) => leitura[configuracao.chave]
+  );
 
   desenharGrafico(
     graficoSensor,
-    estado.historico.map((leitura) => leitura[sensor]),
-    lerVariavelCss(variaveisDeCor[sensor], "#328cff"),
-    sensor === "temperatura" ? 1 : 0
+    estado.historico,
+    configuracao
   );
 
   desenharGrafico(
     graficoPessoas,
-    estado.historico.map((leitura) => leitura.pessoas),
-    lerVariavelCss("--chart-pessoas", "#45d6a2"),
-    0
+    estado.historico,
+    {
+      chave: "pessoas",
+      cor: corCss("--grafico-2", "#60a5fa"),
+      casas: 0,
+      unidade: "pessoas",
+      amplitudeMinima: 6
+    }
   );
+
+  atualizarKpisGrafico(valoresSensor, sensor);
+
+  if (valoresSensor.length) {
+    graficoSensor.setAttribute(
+      "aria-label",
+      "Histórico de " + sensor + ". Atual: " +
+        valoresSensor[valoresSensor.length - 1].toFixed(configuracao.casas) +
+        configuracao.unidade + "."
+    );
+  }
+}
+
+function configurarTooltipGrafico(canvasId, tooltipId) {
+  const canvas = $(canvasId);
+  const tooltip = $(tooltipId);
+
+  if (!canvas || !tooltip) return;
+
+  const ocultar = () => {
+    tooltip.hidden = true;
+  };
+
+  canvas.addEventListener("pointerleave", ocultar);
+  canvas.addEventListener("pointercancel", ocultar);
+  canvas.addEventListener("pointermove", (evento) => {
+    const dados = geometriaGraficos.get(canvas);
+    if (!dados || !dados.pontos.length) return;
+
+    const retangulo = canvas.getBoundingClientRect();
+    const x = evento.clientX - retangulo.left;
+    const proporcao = limitar(
+      (x - dados.margem.esquerda) / dados.areaLargura,
+      0,
+      1
+    );
+    const indice = Math.round(
+      proporcao * (dados.pontos.length - 1)
+    );
+    const ponto = dados.pontos[indice];
+    const horario = dados.horarios[indice];
+    const valor = dados.valores[indice];
+
+    const valorEl = document.createElement("strong");
+    valorEl.textContent = valor.toFixed(dados.casas) +
+      (dados.unidade ? " " + dados.unidade : "");
+
+    const horaEl = document.createElement("span");
+    horaEl.textContent = formatarHorario(horario, true);
+
+    tooltip.replaceChildren(valorEl, horaEl);
+    tooltip.hidden = false;
+    tooltip.style.setProperty("--tooltip-cor", dados.cor);
+
+    const larguraTooltip = tooltip.offsetWidth;
+    const wrapper = tooltip.parentElement;
+    const espacoTooltip = larguraTooltip + 16;
+    const esquerda = wrapper.clientWidth <= espacoTooltip
+      ? wrapper.clientWidth / 2
+      : limitar(
+        ponto[0],
+        larguraTooltip / 2 + 8,
+        wrapper.clientWidth - larguraTooltip / 2 - 8
+      );
+    const acima = ponto[1] > 72;
+
+    tooltip.style.left = esquerda + "px";
+    tooltip.style.top = ponto[1] + "px";
+    tooltip.style.transform = acima
+      ? "translate(-50%, calc(-100% - 12px))"
+      : "translate(-50%, 12px)";
+  });
+}
+
+function agendarRedesenhoGraficos() {
+  if (redesenhoGraficosPendente !== null) {
+    cancelAnimationFrame(redesenhoGraficosPendente);
+  }
+
+  redesenhoGraficosPendente = requestAnimationFrame(() => {
+    redesenhoGraficosPendente = null;
+    desenharGraficos();
+  });
+}
+
+function configurarGraficos() {
+  configurarTooltipGrafico("grafico-sensor", "grafico-tooltip");
+  configurarTooltipGrafico(
+    "grafico-pessoas",
+    "grafico-pessoas-tooltip"
+  );
+
+  if ("ResizeObserver" in window) {
+    const observador = new ResizeObserver(agendarRedesenhoGraficos);
+    document.querySelectorAll(".grafico-canvas-wrapper").forEach(
+      (wrapper) => observador.observe(wrapper)
+    );
+  }
 }
 
 // ==========================================
@@ -538,9 +1029,7 @@ function mostrarPill(id, ligado, textoLigado, textoDesligado) {
   if (!elemento) return;
 
   elemento.className = `pill ${ligado ? "on" : "off"}`;
-  elemento.textContent = ligado
-    ? textoLigado
-    : textoDesligado;
+  elemento.textContent = ligado ? textoLigado : textoDesligado;
 }
 
 function desenhar() {
@@ -551,23 +1040,10 @@ function desenhar() {
 
   const alertas = calcularAlertas(s);
 
-  const bannerStatus = $("banner-status");
-  const bannerModo = $("banner-modo");
-  const bannerHora = $("banner-hora");
-
-  bannerStatus.textContent = alertas.length
-    ? `${alertas.length} alerta(s)`
-    : "Tudo normal";
-  bannerStatus.classList.toggle("status-alerta", alertas.length > 0);
-  bannerStatus.classList.toggle("status-ok", alertas.length === 0);
-
-  bannerModo.textContent = estado.modoAuto
-    ? "Modo automático"
-    : "Modo manual";
-  bannerModo.classList.toggle("status-auto", estado.modoAuto);
-
-  bannerHora.textContent =
-    `Atualizado às ${hist[hist.length - 1].hora.toLocaleTimeString("pt-BR")}`;
+  const bannerHoraTexto = $("banner-hora-texto");
+  if (bannerHoraTexto) {
+    bannerHoraTexto.textContent = hist[hist.length - 1].hora.toLocaleTimeString("pt-BR");
+  }
 
   $("m-temp").textContent = `${s.temperatura.toFixed(1)} °C`;
   $("m-umid").textContent = `${s.umidade} %`;
@@ -608,20 +1084,14 @@ function desenhar() {
 
   if (caixa) {
     caixa.replaceChildren();
+    caixa.hidden = alertas.length === 0;
 
-    if (alertas.length === 0) {
+    alertas.forEach((texto) => {
       const div = document.createElement("div");
-      div.className = "alerta ok";
-      div.textContent = "Tudo normal";
+      div.className = "alerta aviso";
+      div.textContent = texto;
       caixa.appendChild(div);
-    } else {
-      alertas.forEach((texto) => {
-        const div = document.createElement("div");
-        div.className = "alerta aviso";
-        div.textContent = texto;
-        caixa.appendChild(div);
-      });
-    }
+    });
   }
 
   // Controles.
@@ -651,15 +1121,8 @@ function desenhar() {
   const btnAr = $("btn-ar");
   const btnLuz = $("btn-luz");
 
-  if (btnAr) {
-    btnAr.disabled = estado.modoAuto;
-    btnAr.textContent = estado.arLigado ? "Desligar ar" : "Ligar ar";
-  }
-
-  if (btnLuz) {
-    btnLuz.disabled = estado.modoAuto;
-    btnLuz.textContent = estado.luzLigada ? "Desligar luz" : "Ligar luz";
-  }
+  if (btnAr) btnAr.disabled = estado.modoAuto;
+  if (btnLuz) btnLuz.disabled = estado.modoAuto;
 
   // Registro de eventos.
   const lista = $("lista-eventos");
@@ -690,26 +1153,24 @@ function desenhar() {
     }
   }
 
-  desenharGraficos();
+  agendarRedesenhoGraficos();
 }
 
 function mostrarAba(nome) {
   document.querySelectorAll(".aba-btn").forEach((botao) => {
-    const ativa = botao.dataset.aba === nome;
-
-    botao.classList.toggle("ativa", ativa);
-    botao.setAttribute("aria-selected", String(ativa));
-    botao.tabIndex = ativa ? 0 : -1;
+    const selecionada = botao.dataset.aba === nome;
+    botao.classList.toggle("ativa", selecionada);
+    botao.setAttribute("aria-selected", String(selecionada));
+    botao.tabIndex = selecionada ? 0 : -1;
   });
 
   document.querySelectorAll(".aba").forEach((secao) => {
-    const ativa = secao.id === `aba-${nome}`;
-
-    secao.classList.toggle("ativa", ativa);
-    secao.hidden = !ativa;
+    const selecionada = secao.id === `aba-${nome}`;
+    secao.classList.toggle("ativa", selecionada);
+    secao.hidden = !selecionada;
   });
 
-  desenharGraficos();
+  agendarRedesenhoGraficos();
 }
 
 // ==========================================
@@ -717,6 +1178,9 @@ function mostrarAba(nome) {
 // ==========================================
 
 class VozController {
+  /**
+   * Verifica se o navegador suporta a Web Speech API
+   */
   static suportado() {
     return Boolean(
       window.SpeechRecognition ||
@@ -724,13 +1188,20 @@ class VozController {
     );
   }
 
-  constructor({ onStatus, onTranscript, onSpeech, onCommand }) {
+  /**
+   * @param {Object} callbacks
+   * @param {Function} callbacks.onStatus - Mensagens de status (ex: "Ouvindo...", "Erro...")
+   * @param {Function} callbacks.onTranscript - Transcrição em tempo real do que está sendo falado
+   * @param {Function} callbacks.onSpeech - Dispara true/false se está captando voz
+   * @param {Function} callbacks.onCommand - Dispara a chave do comando reconhecido
+   */
+  constructor({ onStatus, onTranscript, onSpeech, onCommand } = {}) {
     const Recognition =
       window.SpeechRecognition ||
       window.webkitSpeechRecognition;
 
     if (!Recognition) {
-      throw new Error("Reconhecimento de voz indisponível");
+      throw new Error("Reconhecimento de voz não suportado neste navegador.");
     }
 
     this.reconhecimento = new Recognition();
@@ -739,25 +1210,36 @@ class VozController {
     this.reconhecimento.interimResults = true;
 
     this.ativo = false;
-    this.onStatus = onStatus;
-    this.onTranscript = onTranscript;
-    this.onSpeech = onSpeech;
-    this.onCommand = onCommand;
+    this.iniciando = false;
+    this.preservarStatusNoFim = false;
+    this.onStatus = onStatus || (() => {});
+    this.onTranscript = onTranscript || (() => {});
+    this.onSpeech = onSpeech || (() => {});
+    this.onCommand = onCommand || (() => {});
 
+    // Eventos do Reconhecimento
     this.reconhecimento.onstart = () => {
+      this.iniciando = false;
       this.ativo = true;
       this.onStatus("Ouvindo...");
       this.onSpeech(true);
     };
 
     this.reconhecimento.onend = () => {
+      this.iniciando = false;
       this.ativo = false;
       this.onSpeech(false);
-      this.onStatus("Microfone desligado");
+      if (!this.preservarStatusNoFim) {
+        this.onStatus("Pronto para ouvir");
+      } else {
+        this.onStatus(null);
+      }
     };
 
     this.reconhecimento.onerror = (evento) => {
+      this.iniciando = false;
       this.ativo = false;
+      this.preservarStatusNoFim = true;
       this.onSpeech(false);
       this.onStatus(`Erro no microfone: ${evento.error}`);
     };
@@ -765,17 +1247,20 @@ class VozController {
     this.reconhecimento.onresult = (evento) => {
       const resultados = Array.from(evento.results);
 
+      // Texto captado em tempo real
       const texto = resultados
         .map((resultado) => resultado[0].transcript)
         .join(" ");
 
       this.onTranscript(texto);
 
-      // Só executa comandos quando a fala for finalizada.
-      const finais = resultados.filter(
-        (resultado) => resultado.isFinal
-      );
-
+      // Só avalia comandos quando a fala for finalizada
+      const inicio = Number.isInteger(evento.resultIndex)
+        ? evento.resultIndex
+        : 0;
+      const finais = resultados
+        .slice(inicio)
+        .filter((resultado) => resultado.isFinal);
       if (!finais.length) return;
 
       const falaFinal = finais
@@ -783,6 +1268,7 @@ class VozController {
         .join(" ");
 
       const comando = VozController.identificarComando(falaFinal);
+      this.preservarStatusNoFim = true;
 
       if (comando) {
         this.onCommand(comando);
@@ -793,105 +1279,71 @@ class VozController {
     };
   }
 
+  /**
+   * Normaliza o texto e mapeia para identificadores de ação
+   */
   static identificarComando(texto) {
     const frase = texto
       .toLowerCase()
       .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .replace(/[^a-z0-9\s]/g, " ")
+      .replace(/[\u0300-\u036f]/g, "") // Remove acentos
+      .replace(/[^a-z0-9\s]/g, " ")     // Remove pontuações
       .replace(/\s+/g, " ")
       .trim();
 
-    // Verifica se algum dos termos está presente como substring na frase.
-    const tem = (...termos) =>
-      termos.some((termo) => frase.includes(termo));
-
-    // Verifica se o termo aparece como palavra isolada (evita falsos positivos
-    // por substring, como "ar" dentro de "ligar" ou "desligar").
-    const temPalavra = (termo) =>
-      new RegExp(`(?<![a-z])${termo}(?![a-z])`).test(frase);
+    // Compara palavras ou frases completas, evitando falsos positivos por substring.
+    const fraseDelimitada = ` ${frase} `;
+    const tem = (...termos) => termos.some(
+      (termo) => fraseDelimitada.includes(` ${termo} `)
+    );
 
     const desligar = tem(
-      "desligar",
-      "desliga",
-      "desative",
-      "desativar",
-      "parar",
-      "pare",
-      "desabilitar"
+      "desligar", "desliga", "desligue", "desative", "desativar",
+      "apagar", "apaga", "apague", "parar", "pare", "desabilitar"
     );
-
     const ligar = tem(
-      "ligar",
-      "liga",
-      "ative",
-      "ativar",
-      "habilitar",
-      "iniciar"
+      "ligar", "liga", "ligue", "ative", "ativar", "acender",
+      "acenda", "acende", "habilitar", "iniciar"
     );
+    const historico = tem("historico", "historia", "csv", "registros");
+    const atualizacao = tem("atualizacao", "atualizacoes", "atualizar automaticamente", "atualizacao automatica");
+    const modoAutomatico = tem("automatico", "automatica", "automacao") || (tem("modo") && tem("auto"));
 
-    const historico = tem(
-      "historico",
-      "historia",
-      "csv",
-      "registros"
-    );
+    // Uma frase negada não deve acionar equipamentos por engano.
+    if (tem("nao", "nunca") && (ligar || desligar)) return null;
 
-    const atualizacao = tem(
-      "atualizacao",
-      "atualizacoes",
-      "atualizar automaticamente",
-      "atualizacao automatica"
-    );
-
-    const modoAutomatico =
-      tem("automatico", "automatica", "automacao") ||
-      (tem("modo") && tem("auto"));
-
-    // Ações de histórico são verificadas antes dos comandos genéricos.
-    if (
-      historico &&
-      tem("baixar", "baixa", "exportar", "exporte", "download")
-    ) {
+    // Comandos de histórico
+    if (historico && tem("baixar", "baixa", "exportar", "exporte", "download")) {
       return "baixar_historico";
     }
 
-    if (
-      historico &&
-      tem("limpar", "limpa", "apagar", "apague", "excluir", "remover")
-    ) {
+    if (historico && tem("limpar", "limpa", "apagar", "apague", "excluir", "remover")) {
       return "limpar_historico";
     }
 
-    if (atualizacao && desligar) {
-      return "desligar_atualizacao";
+    // Comandos de atualização
+    if (atualizacao && desligar) return "desligar_atualizacao";
+    if (atualizacao && ligar) return "ligar_atualizacao";
+
+    // Modo automático
+    if (modoAutomatico && desligar) return "desligar_modo_auto";
+    if (modoAutomatico && ligar) return "ligar_modo_auto";
+
+    if (desligar && tem("tudo", "todos", "equipamentos")) {
+      return "desligar_tudo";
     }
 
-    if (atualizacao && ligar) {
-      return "ligar_atualizacao";
-    }
-
-    if (modoAutomatico && desligar) {
-      return "desligar_modo_auto";
-    }
-
-    if (modoAutomatico && ligar) {
-      return "ligar_modo_auto";
-    }
-
-    // "ar" usa temPalavra para não colidir com "ligar" / "desligar".
-    const ar = temPalavra("ar") || tem("condicionado", "climatizacao");
+    // Dispositivos
+    const ar = tem("ar", "condicionado", "climatizacao");
     const luz = tem("luz", "luzes", "iluminacao");
 
-    // Desligar é analisado antes de ligar.
     if (desligar && ar) return "desligar_ar";
     if (desligar && luz) return "desligar_luz";
     if (ligar && ar) return "ligar_ar";
     if (ligar && luz) return "ligar_luz";
 
-    if (
-      tem("simular", "simule", "simulacao", "nova deteccao")
-    ) {
+    // Simulação manual
+    if (tem("simular", "simule", "simulacao", "nova deteccao")) {
       return "simular";
     }
 
@@ -899,19 +1351,21 @@ class VozController {
   }
 
   iniciar() {
-    if (this.ativo) return;
-
+    if (this.ativo || this.iniciando) return;
+    this.iniciando = true;
+    this.preservarStatusNoFim = false;
     try {
-      this.reconhecimento.start();
       this.onStatus("Solicitando microfone...");
+      this.reconhecimento.start();
     } catch (erro) {
+      this.iniciando = false;
+      this.preservarStatusNoFim = true;
       this.onStatus(`Não foi possível iniciar: ${erro.message}`);
     }
   }
 
   parar() {
-    if (!this.ativo) return;
-
+    if (!this.ativo && !this.iniciando) return;
     try {
       this.reconhecimento.stop();
     } catch (erro) {
@@ -926,11 +1380,32 @@ class VozController {
 
 function configurarVoz() {
   const widget = $("voz-widget");
+  const botaoToggle = $("btn-toggle-voz");
   const botao = $("btn-voz");
   const status = $("voz-status");
   const transcricao = $("voz-texto");
+  const botaoTexto = $("btn-voz-texto");
+  const icoEstado = $("ico-voz-estado");
+  const statusDot = $("voz-status-dot");
 
-  if (!botao || !status || !transcricao) return;
+  if (!widget || !botaoToggle || !botao || !status || !transcricao) return;
+
+  const alternarPainelVoz = (aberto) => {
+    widget.hidden = !aberto;
+    botaoToggle.setAttribute("aria-expanded", String(aberto));
+    botaoToggle.setAttribute(
+      "aria-label",
+      aberto ? "Ocultar assistente de voz" : "Abrir assistente de voz"
+    );
+    botaoToggle.title = aberto ? "Ocultar assistente de voz" : "Assistente de voz";
+
+    // O painel nunca fica oculto enquanto o microfone continua ativo.
+    if (!aberto && controleVoz) controleVoz.parar();
+  };
+
+  botaoToggle.addEventListener("click", () => {
+    alternarPainelVoz(widget.hidden);
+  });
 
   if (!VozController.suportado()) {
     botao.disabled = true;
@@ -940,15 +1415,36 @@ function configurarVoz() {
 
   controleVoz = new VozController({
     onStatus(mensagem) {
-      status.textContent = mensagem;
-      botao.textContent = controleVoz.ativo
-        ? "⏹ Parar voz"
-        : "🎙️ Iniciar voz";
+      if (mensagem) status.textContent = mensagem;
 
-      botao.setAttribute(
-        "aria-pressed",
-        String(controleVoz.ativo)
-      );
+      const iniciando = controleVoz.iniciando;
+      const ativo = controleVoz.ativo;
+
+      botao.disabled = iniciando;
+
+      // Atualiza texto do botão (sem emojis)
+      if (botaoTexto) {
+        botaoTexto.textContent = iniciando
+          ? "Solicitando..."
+          : ativo
+            ? "Parar voz"
+            : "Iniciar voz";
+      }
+
+      // Troca ícone: microfone → stop
+      if (icoEstado) {
+        icoEstado.querySelector("use").setAttribute(
+          "href",
+          ativo ? "#i-stop" : "#i-mic"
+        );
+      }
+
+      // Ponto de status
+      if (statusDot) {
+        statusDot.className = "voz-status-dot " + (ativo ? "ativo" : "");
+      }
+
+      botao.setAttribute("aria-pressed", String(ativo));
     },
 
     onTranscript(texto) {
@@ -1014,8 +1510,12 @@ function configurarVoz() {
           mudarAtualizacaoAutomatica(false, "comando de voz");
           break;
 
+        case "desligar_tudo":
+          desligarTudo();
+          break;
+
         case "baixar_historico":
-          baixarCsv();
+          baixarHistoricoExcel();
           break;
 
         case "limpar_historico":
@@ -1036,6 +1536,43 @@ function configurarVoz() {
       controleVoz.iniciar();
     }
   });
+
+}
+
+function configurarTema() {
+  const botao = $("btn-tema");
+  const texto = $("tema-texto");
+
+  if (!botao || !texto) return;
+
+  const aplicarRotulo = () => {
+    const temaAtual = document.documentElement.dataset.tema;
+    const proximoTema = temaAtual === "claro" ? "escuro" : "claro";
+    texto.textContent = proximoTema === "claro" ? "Modo claro" : "Modo escuro";
+    botao.setAttribute("aria-label", `Ativar ${texto.textContent.toLowerCase()}`);
+  };
+
+  const temaInicial = document.documentElement.dataset.tema === "claro"
+    ? "claro"
+    : "escuro";
+  document.documentElement.dataset.tema = temaInicial;
+  aplicarRotulo();
+
+  botao.addEventListener("click", () => {
+    const novoTema = document.documentElement.dataset.tema === "claro"
+      ? "escuro"
+      : "claro";
+
+    document.documentElement.dataset.tema = novoTema;
+    try {
+      localStorage.setItem("tema", novoTema);
+    } catch (erro) {
+      console.warn("Não foi possível salvar o tema.", erro);
+    }
+
+    aplicarRotulo();
+    requestAnimationFrame(desenharGraficos);
+  });
 }
 
 // ==========================================
@@ -1043,18 +1580,21 @@ function configurarVoz() {
 // ==========================================
 
 function iniciar() {
-  atualizarControleTema();
-  $("btn-tema").addEventListener("click", alternarTema);
-
   $("temp-alta").addEventListener("input", (evento) => {
     estado.tempAlta = Number(evento.target.value);
     $("temp-alta-valor").textContent = estado.tempAlta;
+    if (estado.modoAuto && estado.sensores) {
+      aplicarAutomacao(estado.sensores);
+    }
     desenhar();
   });
 
   $("lux-baixa").addEventListener("input", (evento) => {
     estado.luxBaixa = Number(evento.target.value);
     $("lux-baixa-valor").textContent = estado.luxBaixa;
+    if (estado.modoAuto && estado.sensores) {
+      aplicarAutomacao(estado.sensores);
+    }
     desenhar();
   });
 
@@ -1075,7 +1615,7 @@ function iniciar() {
 
   $("btn-baixar").addEventListener(
     "click",
-    baixarCsv
+    baixarHistoricoExcel
   );
 
   $("btn-limpar").addEventListener(
@@ -1105,49 +1645,57 @@ function iniciar() {
     desenharGraficos
   );
 
-  const botoesAbas = Array.from(
-    document.querySelectorAll(".aba-btn")
-  );
+  // Seletor de sensor em abas/pills (HTML novo)
+  const btnsSensorTab = document.querySelectorAll(".btn-sensor-tab");
+  btnsSensorTab.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      btnsSensorTab.forEach((b) => {
+        b.classList.remove("ativo");
+        b.setAttribute("aria-pressed", "false");
+      });
+      btn.classList.add("ativo");
+      btn.setAttribute("aria-pressed", "true");
 
-  botoesAbas.forEach((botao, indice) => {
+      const seletor = $("sensor-grafico");
+      if (seletor) {
+        seletor.value = btn.dataset.sensor;
+        seletor.dispatchEvent(new Event("change"));
+      }
+    });
+  });
+
+  const botoesAba = Array.from(document.querySelectorAll(".aba-btn"));
+
+  botoesAba.forEach((botao, indice) => {
     botao.addEventListener("click", () => {
       mostrarAba(botao.dataset.aba);
     });
 
     botao.addEventListener("keydown", (evento) => {
-      const teclasNavegacao = [
-        "ArrowRight",
-        "ArrowDown",
-        "ArrowLeft",
-        "ArrowUp",
-        "Home",
-        "End"
-      ];
-
-      if (!teclasNavegacao.includes(evento.key)) return;
+      const teclas = ["ArrowDown", "ArrowRight", "ArrowUp", "ArrowLeft", "Home", "End"];
+      if (!teclas.includes(evento.key)) return;
 
       evento.preventDefault();
-
       let proximoIndice = indice;
-
       if (evento.key === "Home") proximoIndice = 0;
-      if (evento.key === "End") proximoIndice = botoesAbas.length - 1;
-      if (["ArrowRight", "ArrowDown"].includes(evento.key)) {
-        proximoIndice = (indice + 1) % botoesAbas.length;
-      }
-      if (["ArrowLeft", "ArrowUp"].includes(evento.key)) {
-        proximoIndice = (indice - 1 + botoesAbas.length) % botoesAbas.length;
+      else if (evento.key === "End") proximoIndice = botoesAba.length - 1;
+      else if (["ArrowDown", "ArrowRight"].includes(evento.key)) {
+        proximoIndice = (indice + 1) % botoesAba.length;
+      } else {
+        proximoIndice = (indice - 1 + botoesAba.length) % botoesAba.length;
       }
 
-      const proximoBotao = botoesAbas[proximoIndice];
-      proximoBotao.focus();
-      mostrarAba(proximoBotao.dataset.aba);
+      const proximaAba = botoesAba[proximoIndice];
+      proximaAba.focus();
+      mostrarAba(proximaAba.dataset.aba);
     });
   });
 
-  window.addEventListener("resize", desenharGraficos);
+  window.addEventListener("resize", agendarRedesenhoGraficos);
 
-  atualizarSensores();
+  inicializarHistorico();
+  configurarTema();
+  configurarGraficos();
   desenhar();
   mostrarAba("sensores");
   configurarVoz();
