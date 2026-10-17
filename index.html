@@ -1,452 +1,293 @@
 <!DOCTYPE html>
 <html lang="pt-BR" data-tema="escuro">
-
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="color-scheme" content="dark light">
-    <meta name="theme-color" content="#07111f">
-    <meta name="description" content="Painel inteligente para monitoramento e controle de sala.">
-    <title>SENAI Smart Class | Monitoramento Inteligente</title>
-    <script>
-        /* Aplica o tema salvo antes da primeira pintura para evitar oscilação visual. */
-        try {
-            const temaSalvo = localStorage.getItem("tema");
-            document.documentElement.dataset.tema =
-                temaSalvo === "claro" || temaSalvo === "escuro" ? temaSalvo : "escuro";
-        } catch (erro) {
-            document.documentElement.dataset.tema = "escuro";
-        }
-    </script>
-    <link rel="stylesheet" href="VISUAL.css">
-    <script src="APP.js" defer></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SENAI Smart Class | Monitoramento Inteligente</title>
+<script>
+/* Aplica o tema salvo ANTES de desenhar a página (evita piscar) */
+try {
+  const temaSalvo = localStorage.getItem("tema");
+  document.documentElement.dataset.tema = temaSalvo === "claro" ? "claro" : "escuro";
+} catch (e) {
+  document.documentElement.dataset.tema = "escuro";
+}
+</script>
+<link rel="stylesheet" href="visual.css">
+<script src="app.js" defer></script>
 </head>
-
 <body>
-    <a class="pular-conteudo" href="#conteudo-principal">Pular para o conteúdo</a>
 
-    <!-- Sprite local: mantém a interface rápida e independente de bibliotecas externas. -->
-    <svg class="svg-sprite" width="0" height="0" aria-hidden="true" focusable="false">
-        <symbol id="i-logo" viewBox="0 0 24 24">
-            <rect x="5" y="5" width="14" height="14" rx="2" />
-            <rect x="9" y="9" width="6" height="6" />
-            <path d="M9 1v4M15 1v4M9 19v4M15 19v4M1 9h4M1 15h4M19 9h4M19 15h4" />
-        </symbol>
-        <symbol id="i-temp" viewBox="0 0 24 24">
-            <path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z" />
-        </symbol>
-        <symbol id="i-gota" viewBox="0 0 24 24">
-            <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z" />
-        </symbol>
-        <symbol id="i-luz" viewBox="0 0 24 24">
-            <path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7c.7.6 1 1.3 1 2.3h6c0-1 .3-1.7 1-2.3A7 7 0 0 0 12 2z" />
-        </symbol>
-        <symbol id="i-user" viewBox="0 0 24 24">
-            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-            <circle cx="12" cy="7" r="4" />
-        </symbol>
-        <symbol id="i-users" viewBox="0 0 24 24">
-            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-            <circle cx="9" cy="7" r="4" />
-            <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
-        </symbol>
-        <symbol id="i-neve" viewBox="0 0 24 24">
-            <path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M19.07 4.93 4.93 19.07" />
-        </symbol>
-        <symbol id="i-power" viewBox="0 0 24 24">
-            <path d="M18.36 6.64a9 9 0 1 1-12.73 0M12 2v10" />
-        </symbol>
-        <symbol id="i-grafico" viewBox="0 0 24 24">
-            <path d="M3 17l6-6 4 4 8-8M15 7h6v6" />
-        </symbol>
-        <symbol id="i-ajustes" viewBox="0 0 24 24">
-            <path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6" />
-        </symbol>
-        <symbol id="i-atualizar" viewBox="0 0 24 24">
-            <path d="M23 4v6h-6" />
-            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-        </symbol>
-        <symbol id="i-baixar" viewBox="0 0 24 24">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
-        </symbol>
-        <symbol id="i-lixo" viewBox="0 0 24 24">
-            <path
-                d="M3 6h18M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-        </symbol>
-        <symbol id="i-sol" viewBox="0 0 24 24">
-            <circle cx="12" cy="12" r="5" />
-            <path
-                d="M12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4" />
-        </symbol>
-        <symbol id="i-lua" viewBox="0 0 24 24">
-            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-        </symbol>
-        <symbol id="i-sala" viewBox="0 0 24 24">
-            <path d="M3 21h18M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16M9 8h6M9 12h6M9 16h2" />
-        </symbol>
-        <symbol id="i-pulso" viewBox="0 0 24 24">
-            <path d="M3 12h4l2-5 4 10 2-5h6" />
-        </symbol>
-    </svg>
+<!-- ÍCONES: definidos uma vez e reutilizados com <use> -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-logo" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v4M15 1v4M9 19v4M15 19v4M1 9h4M1 15h4M19 9h4M19 15h4"/></symbol>
+  <symbol id="i-temp" viewBox="0 0 24 24"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/></symbol>
+  <symbol id="i-gota" viewBox="0 0 24 24"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/></symbol>
+  <symbol id="i-luz" viewBox="0 0 24 24"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7c.7.6 1 1.3 1 2.3h6c0-1 .3-1.7 1-2.3A7 7 0 0 0 12 2z"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+  <symbol id="i-neve" viewBox="0 0 24 24"><path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M19.07 4.93L4.93 19.07"/></symbol>
+  <symbol id="i-power" viewBox="0 0 24 24"><path d="M18.36 6.64a9 9 0 1 1-12.73 0M12 2v10"/></symbol>
+  <symbol id="i-grafico" viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8M15 7h6v6"/></symbol>
+  <symbol id="i-ajustes" viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></symbol>
+  <symbol id="i-atualizar" viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></symbol>
+  <symbol id="i-baixar" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></symbol>
+  <symbol id="i-lixo" viewBox="0 0 24 24"><path d="M3 6h18M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></symbol>
+  <symbol id="i-sol" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/></symbol>
+  <symbol id="i-lua" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2.5"/></symbol>
+  <symbol id="i-relogio" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></symbol>
+  <symbol id="i-onda" viewBox="0 0 24 24"><path d="M2 10v4M6 6v12M10 3v18M14 8v8M18 5v14M22 10v4"/></symbol>
+  <symbol id="i-trend-up" viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></symbol>
+  <symbol id="i-trend-down" viewBox="0 0 24 24"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></symbol>
+</svg>
 
-    <div class="fundo-orb fundo-orb-um" aria-hidden="true"></div>
-    <div class="fundo-orb fundo-orb-dois" aria-hidden="true"></div>
+<div class="layout">
 
-    <div class="layout">
-        <aside class="sidebar" aria-label="Navegação do painel">
-            <div class="marca">
-                <span class="logo" aria-hidden="true">
-                    <svg class="ico">
-                        <use href="#i-logo" />
-                    </svg>
-                </span>
-                <div class="marca-texto">
-                    <span class="marca-instituicao">SENAI</span>
-                    <strong>Smart Class</strong>
-                    <small>Gestão de ambiente</small>
-                </div>
-            </div>
-
-            <div class="sala-resumo">
-                <span class="sala-icone" aria-hidden="true"><svg class="ico">
-                        <use href="#i-sala" />
-                    </svg></span>
-                <div>
-                    <span>Ambiente monitorado</span>
-                    <strong>Sala 01 · Laboratório</strong>
-                    <small><i aria-hidden="true"></i>Sistema operacional</small>
-                </div>
-            </div>
-
-            <nav class="menu" aria-label="Seções do dashboard" role="tablist">
-                <span class="menu-titulo">Menu principal</span>
-                <button class="aba-btn ativa" id="aba-btn-sensores" data-aba="sensores" type="button" role="tab"
-                    aria-selected="true" aria-controls="aba-sensores" tabindex="0">
-                    <svg class="ico" aria-hidden="true">
-                        <use href="#i-grafico" />
-                    </svg>
-                    <span>Sensores</span>
-                </button>
-                <button class="aba-btn" id="aba-btn-controles" data-aba="controles" type="button" role="tab"
-                    aria-selected="false" aria-controls="aba-controles" tabindex="-1">
-                    <svg class="ico" aria-hidden="true">
-                        <use href="#i-power" />
-                    </svg>
-                    <span>Controles</span>
-                </button>
-                <button class="aba-btn" id="aba-btn-verificacao" data-aba="verificacao" type="button" role="tab"
-                    aria-selected="false" aria-controls="aba-verificacao" tabindex="-1">
-                    <svg class="ico" aria-hidden="true">
-                        <use href="#i-users" />
-                    </svg>
-                    <span>Verificação</span>
-                </button>
-                <button class="aba-btn" id="aba-btn-config" data-aba="config" type="button" role="tab"
-                    aria-selected="false" aria-controls="aba-config" tabindex="-1">
-                    <svg class="ico" aria-hidden="true">
-                        <use href="#i-ajustes" />
-                    </svg>
-                    <span>Configurações</span>
-                </button>
-            </nav>
-
-            <div class="sidebar-rodape">
-                <button class="btn tema-btn" id="btn-tema" type="button" aria-label="Ativar modo claro">
-                    <span class="tema-icone" aria-hidden="true">
-                        <svg class="ico ico-sol">
-                            <use href="#i-sol" />
-                        </svg>
-                        <svg class="ico ico-lua">
-                            <use href="#i-lua" />
-                        </svg>
-                    </span>
-                    <span id="tema-texto">Modo claro</span>
-                </button>
-                <span class="versao">Painel local · v1.0</span>
-            </div>
-        </aside>
-
-        <main class="conteudo" id="conteudo-principal" tabindex="-1">
-            <div class="conteudo-interno">
-                <header class="banner">
-                    <div class="banner-identidade">
-                        <span class="eyebrow"><svg class="ico" aria-hidden="true">
-                                <use href="#i-pulso" />
-                            </svg>Visão operacional</span>
-                        <h1>Painel da sala</h1>
-                        <p>Conforto, ocupação e equipamentos em uma única visão.</p>
-                    </div>
-
-                    <div class="banner-operacao">
-                        <div class="pills" aria-label="Resumo operacional" aria-live="polite">
-                            <span class="status" id="banner-status">Carregando status</span>
-                            <span class="status" id="banner-modo">Carregando modo</span>
-                            <span class="status status-hora" id="banner-hora">Sincronizando</span>
-                        </div>
-                        <button class="btn btn-atualizar" id="btn-atualizar" type="button">
-                            <svg class="ico" aria-hidden="true">
-                                <use href="#i-atualizar" />
-                            </svg>
-                            Atualizar agora
-                        </button>
-                    </div>
-                </header>
-
-                <section class="metricas" aria-label="Indicadores atuais da sala">
-                    <article class="card metrica metrica-temperatura">
-                        <div class="metrica-topo">
-                            <span class="metrica-icone" aria-hidden="true"><svg class="ico">
-                                    <use href="#i-temp" />
-                                </svg></span>
-                            <span class="rotulo">Temperatura</span>
-                        </div>
-                        <div class="valor" id="m-temp">--</div>
-                        <div class="metrica-rodape">
-                            <span class="delta" id="m-temp-delta"></span>
-                            <span>Conforto térmico</span>
-                        </div>
-                    </article>
-
-                    <article class="card metrica metrica-umidade">
-                        <div class="metrica-topo">
-                            <span class="metrica-icone" aria-hidden="true"><svg class="ico">
-                                    <use href="#i-gota" />
-                                </svg></span>
-                            <span class="rotulo">Umidade</span>
-                        </div>
-                        <div class="valor" id="m-umid">--</div>
-                        <div class="metrica-rodape"><span>Qualidade do ambiente</span></div>
-                    </article>
-
-                    <article class="card metrica metrica-luminosidade">
-                        <div class="metrica-topo">
-                            <span class="metrica-icone" aria-hidden="true"><svg class="ico">
-                                    <use href="#i-luz" />
-                                </svg></span>
-                            <span class="rotulo">Luminosidade</span>
-                        </div>
-                        <div class="valor" id="m-lux">--</div>
-                        <div class="metrica-rodape"><span>Nível de iluminação</span></div>
-                    </article>
-
-                    <article class="card metrica metrica-presenca">
-                        <div class="metrica-topo">
-                            <span class="metrica-icone" aria-hidden="true"><svg class="ico">
-                                    <use href="#i-user" />
-                                </svg></span>
-                            <span class="rotulo">Presença</span>
-                        </div>
-                        <div class="valor valor-texto" id="m-presenca">--</div>
-                        <div class="metrica-rodape"><span>Ocupação detectada</span></div>
-                    </article>
-                </section>
-
-                <section class="alertas" id="alertas" aria-label="Alertas da sala" aria-live="polite"
-                    aria-atomic="true"></section>
-
-                <section class="aba painel ativa" id="aba-sensores" role="tabpanel" aria-labelledby="aba-btn-sensores">
-                    <div class="painel-cabecalho">
-                        <div>
-                            <span class="secao-kicker">Telemetria</span>
-                            <h2>Histórico de sensores</h2>
-                            <p>Acompanhe a evolução das últimas leituras registradas.</p>
-                        </div>
-                        <label class="campo-select" for="sensor-grafico">
-                            <span>Exibir sensor</span>
-                            <select id="sensor-grafico">
-                                <option value="temperatura">Temperatura</option>
-                                <option value="umidade">Umidade</option>
-                                <option value="luminosidade">Luminosidade</option>
-                            </select>
-                        </label>
-                    </div>
-
-                    <div class="grafico-container">
-                        <div class="grafico-meta">
-                            <span><i class="legenda-ponto" aria-hidden="true"></i>Leituras em tempo real</span>
-                            <span>Últimos 100 registros</span>
-                        </div>
-                        <canvas class="grafico" id="grafico-sensor" role="img"
-                            aria-label="Gráfico do histórico do sensor selecionado">Seu navegador não oferece suporte ao
-                            gráfico.</canvas>
-                    </div>
-
-                    <div class="painel-acoes">
-                        <button class="btn" id="btn-baixar" type="button"><svg class="ico" aria-hidden="true">
-                                <use href="#i-baixar" />
-                            </svg>Baixar histórico</button>
-                        <button class="btn btn-secundario" id="btn-limpar" type="button"><svg class="ico"
-                                aria-hidden="true">
-                                <use href="#i-lixo" />
-                            </svg>Limpar histórico</button>
-                    </div>
-                </section>
-
-                <section class="aba painel" id="aba-controles" role="tabpanel" aria-labelledby="aba-btn-controles"
-                    hidden>
-                    <div class="painel-cabecalho painel-cabecalho-controles">
-                        <div>
-                            <span class="secao-kicker">Automação</span>
-                            <h2>Controles da sala</h2>
-                            <p>Gerencie os equipamentos e acompanhe as ações recentes.</p>
-                        </div>
-                        <div class="controles-globais">
-                            <label class="switch-control" for="modo-auto">
-                                <input type="checkbox" id="modo-auto">
-                                <span class="switch-visual" aria-hidden="true"></span>
-                                <span><strong>Modo automático</strong><small>Regras inteligentes</small></span>
-                            </label>
-                            <button class="btn btn-perigo" id="btn-desligar-tudo" type="button"><svg class="ico"
-                                    aria-hidden="true">
-                                    <use href="#i-power" />
-                                </svg>Encerrar sala</button>
-                        </div>
-                    </div>
-
-                    <div class="duas-colunas equipamentos-grid">
-                        <article class="card equipamento-card">
-                            <div class="equipamento-topo">
-                                <span class="equipamento-icone equipamento-icone-ar" aria-hidden="true"><svg
-                                        class="ico">
-                                        <use href="#i-neve" />
-                                    </svg></span>
-                                <div><span>Climatização</span>
-                                    <h3>Ar-condicionado</h3>
-                                </div>
-                            </div>
-                            <p>Mantenha a temperatura ideal durante as atividades.</p>
-                            <div class="equipamento-rodape">
-                                <span class="pill off" id="pill-ar"></span>
-                                <button class="btn" id="btn-ar" type="button">Ligar/Desligar ar</button>
-                            </div>
-                        </article>
-
-                        <article class="card equipamento-card">
-                            <div class="equipamento-topo">
-                                <span class="equipamento-icone equipamento-icone-luz" aria-hidden="true"><svg
-                                        class="ico">
-                                        <use href="#i-luz" />
-                                    </svg></span>
-                                <div><span>Iluminação</span>
-                                    <h3>Luzes da sala</h3>
-                                </div>
-                            </div>
-                            <p>Ajuste a iluminação conforme a presença e o ambiente.</p>
-                            <div class="equipamento-rodape">
-                                <span class="pill off" id="pill-luz"></span>
-                                <button class="btn" id="btn-luz" type="button">Ligar/Desligar luz</button>
-                            </div>
-                        </article>
-                    </div>
-
-                    <section class="eventos-card" aria-labelledby="eventos-titulo">
-                        <div class="eventos-cabecalho">
-                            <div><span class="secao-kicker">Atividade</span>
-                                <h3 id="eventos-titulo">Últimos eventos</h3>
-                            </div>
-                            <span>Até 15 registros</span>
-                        </div>
-                        <div id="lista-eventos" aria-live="polite"></div>
-                    </section>
-                </section>
-
-                <section class="aba painel" id="aba-verificacao" role="tabpanel" aria-labelledby="aba-btn-verificacao"
-                    hidden>
-                    <div class="painel-cabecalho">
-                        <div>
-                            <span class="secao-kicker">Ocupação</span>
-                            <h2>Verificação de pessoas</h2>
-                            <p>Visualize a presença atual e a movimentação registrada.</p>
-                        </div>
-                    </div>
-
-                    <div class="ocupacao-grid">
-                        <article class="card metrica metrica-pessoas">
-                            <span class="metrica-icone" aria-hidden="true"><svg class="ico">
-                                    <use href="#i-users" />
-                                </svg></span>
-                            <div class="rotulo">Pessoas nesta sala</div>
-                            <div class="valor" id="m-pessoas">--</div>
-                            <div class="delta" id="m-pessoas-delta"></div>
-                            <p>Contagem simulada da ocupação atual.</p>
-                        </article>
-                        <div class="grafico-container grafico-container-ocupacao">
-                            <div class="grafico-meta">
-                                <span><i class="legenda-ponto legenda-ponto-secundario" aria-hidden="true"></i>Variação
-                                    de ocupação</span>
-                                <span>Tempo real</span>
-                            </div>
-                            <canvas class="grafico" id="grafico-pessoas" role="img"
-                                aria-label="Gráfico do histórico de ocupação">Seu navegador não oferece suporte ao
-                                gráfico.</canvas>
-                        </div>
-                    </div>
-                </section>
-
-                <section class="aba painel" id="aba-config" role="tabpanel" aria-labelledby="aba-btn-config" hidden>
-                    <div class="painel-cabecalho">
-                        <div>
-                            <span class="secao-kicker">Preferências</span>
-                            <h2>Configurações</h2>
-                            <p>Defina os limites usados pela automação da sala.</p>
-                        </div>
-                    </div>
-
-                    <div class="config-grid">
-                        <div class="config-item">
-                            <div class="config-item-cabecalho">
-                                <div><span>Climatização</span><label for="temp-alta">Temperatura para ligar o ar</label>
-                                </div>
-                                <output for="temp-alta"><b id="temp-alta-valor">28</b> °C</output>
-                            </div>
-                            <input type="range" id="temp-alta" min="20" max="32" value="28">
-                            <div class="range-limites"><span>20 °C</span><span>32 °C</span></div>
-                        </div>
-
-                        <div class="config-item">
-                            <div class="config-item-cabecalho">
-                                <div><span>Iluminação</span><label for="lux-baixa">Luminosidade para ligar a luz</label>
-                                </div>
-                                <output for="lux-baixa"><b id="lux-baixa-valor">40</b>%</output>
-                            </div>
-                            <input type="range" id="lux-baixa" min="10" max="80" value="40">
-                            <div class="range-limites"><span>10%</span><span>80%</span></div>
-                        </div>
-
-                        <div class="config-item config-item-atualizacao">
-                            <label class="switch-control switch-control-largo" for="auto-refresh">
-                                <input type="checkbox" id="auto-refresh">
-                                <span class="switch-visual" aria-hidden="true"></span>
-                                <span><strong>Atualização automática</strong><small>Renovar as leituras
-                                        periodicamente</small></span>
-                            </label>
-                            <div class="intervalo-config">
-                                <div class="config-item-cabecalho">
-                                    <label for="intervalo">Intervalo entre leituras</label>
-                                    <output for="intervalo"><b id="intervalo-valor">5</b> s</output>
-                                </div>
-                                <input type="range" id="intervalo" min="2" max="30" value="5" disabled>
-                                <div class="range-limites"><span>2 s</span><span>30 s</span></div>
-                            </div>
-                        </div>
-                    </div>
-                </section>
-            </div>
-        </main>
+  <!-- MENU LATERAL -->
+  <aside class="sidebar">
+    <div class="marca">
+      <span class="logo"><svg class="ico"><use href="#i-logo"/></svg></span>
+      <div><b>SENAI</b><small>SMART CLASS</small></div>
     </div>
 
-    <section id="voz-widget" class="voz-widget" aria-label="Comando de voz">
-        <div class="voz-cabecalho">
-            <span id="voz-indicador" class="voz-indicador" aria-hidden="true"></span>
-            <div class="voz-identidade"><strong>Assistente de voz</strong><span id="voz-status"
-                    aria-live="polite">Microfone desligado</span></div>
-            <button id="btn-voz" type="button" aria-pressed="false">Iniciar voz</button>
-        </div>
-        <div class="voz-transcricao">
-            <span>Transcrição</span>
-            <output id="voz-texto" aria-live="polite">Aguardando fala…</output>
-        </div>
-    </section>
-</body>
+    <nav class="menu" aria-label="Seções do dashboard" role="tablist">
+      <button class="aba-btn ativa" id="aba-btn-sensores" data-aba="sensores" type="button" role="tab" aria-controls="aba-sensores" aria-selected="true"><svg class="ico"><use href="#i-grafico"/></svg>Sensores</button>
+      <button class="aba-btn" id="aba-btn-controles" data-aba="controles" type="button" role="tab" aria-controls="aba-controles" aria-selected="false" tabindex="-1"><svg class="ico"><use href="#i-power"/></svg>Controles</button>
+      <button class="aba-btn" id="aba-btn-verificacao" data-aba="verificacao" type="button" role="tab" aria-controls="aba-verificacao" aria-selected="false" tabindex="-1"><svg class="ico"><use href="#i-users"/></svg>Verificação</button>
+      <button class="aba-btn" id="aba-btn-config" data-aba="config" type="button" role="tab" aria-controls="aba-config" aria-selected="false" tabindex="-1"><svg class="ico"><use href="#i-ajustes"/></svg>Configurações</button>
+    </nav>
 
+    <button class="btn tema-btn" id="btn-tema" type="button">
+      <svg class="ico ico-sol"><use href="#i-sol"/></svg>
+      <svg class="ico ico-lua"><use href="#i-lua"/></svg>
+      <span id="tema-texto">Modo claro</span>
+    </button>
+  </aside>
+
+  <main class="conteudo">
+
+    <!-- BANNER -->
+    <header class="banner">
+      <div>
+        <h1 class="titulo">Painel da sala</h1>
+        <div class="subtitulo">Monitoramento inteligente <span class="selo">Dados simulados</span></div>
+      </div>
+      <div class="pills">
+        <span class="status hora-pill" id="banner-hora" title="Horário da última sincronização">
+          <svg class="ico"><use href="#i-relogio"/></svg>
+          <span id="banner-hora-texto">--:--:--</span>
+        </span>
+      </div>
+    </header>
+
+    <!-- ASSISTENTE DE VOZ -->
+    <section id="voz-widget" class="voz-widget" aria-label="Assistente de voz" hidden>
+      <div class="voz-identidade">
+        <span class="voz-icone-principal" aria-hidden="true">
+          <svg class="ico"><use href="#i-mic"/></svg>
+          <span class="voz-status-dot" id="voz-status-dot"></span>
+        </span>
+        <div class="voz-meta">
+          <span class="voz-rotulo-badge">Assistente de voz</span>
+          <span id="voz-status" class="voz-status-texto" aria-live="polite">Pronto para ouvir</span>
+        </div>
+        <div class="voz-ondas" id="voz-ondas" aria-hidden="true">
+          <span class="voz-barra"></span>
+          <span class="voz-barra"></span>
+          <span class="voz-barra"></span>
+          <span class="voz-barra"></span>
+        </div>
+      </div>
+
+      <div class="voz-transcricao-bloco">
+        <span class="voz-subrotulo">Último comando</span>
+        <output id="voz-texto" class="voz-transcricao-saida" aria-live="polite">Nenhum comando recebido</output>
+      </div>
+
+      <button id="btn-voz" class="btn-voz-interativo" type="button" aria-pressed="false">
+        <svg class="ico ico-mic" id="ico-voz-estado" aria-hidden="true"><use href="#i-mic"/></svg>
+        <span id="btn-voz-texto">Iniciar voz</span>
+      </button>
+    </section>
+
+    <button id="btn-toggle-voz" class="btn-toggle-voz" type="button" aria-controls="voz-widget" aria-expanded="false" aria-label="Abrir assistente de voz" title="Assistente de voz">
+      <svg class="ico" aria-hidden="true"><use href="#i-mic"/></svg>
+      <span class="sr-only">Abrir assistente de voz</span>
+    </button>
+
+    <!-- SENSORES -->
+    <section class="metricas">
+      <div class="card metrica">
+        <div class="rotulo"><svg class="ico"><use href="#i-temp"/></svg>Temperatura</div>
+        <div class="valor" id="m-temp">--</div>
+        <div class="delta" id="m-temp-delta"></div>
+      </div>
+      <div class="card metrica">
+        <div class="rotulo"><svg class="ico"><use href="#i-gota"/></svg>Umidade</div>
+        <div class="valor" id="m-umid">--</div>
+      </div>
+      <div class="card metrica">
+        <div class="rotulo"><svg class="ico"><use href="#i-luz"/></svg>Luminosidade</div>
+        <div class="valor" id="m-lux">--</div>
+      </div>
+      <div class="card metrica">
+        <div class="rotulo"><svg class="ico"><use href="#i-user"/></svg>Presença</div>
+        <div class="valor" id="m-presenca">--</div>
+      </div>
+    </section>
+
+    <button class="btn" id="btn-atualizar"><svg class="ico"><use href="#i-atualizar"/></svg>Atualizar agora</button>
+
+    <div id="alertas" aria-live="polite"></div>
+
+    <!-- ABA SENSORES -->
+    <section class="aba ativa" id="aba-sensores" role="tabpanel" aria-labelledby="aba-btn-sensores">
+      <div class="grafico-container-card">
+        <div class="grafico-topo">
+          <div class="grafico-titulos">
+            <h2>Histórico de Sensores</h2>
+            <div class="grafico-status-badge">
+              <span class="ponto-ao-vivo" aria-hidden="true"></span>
+              <span>Histórico recente das leituras simuladas</span>
+            </div>
+          </div>
+
+          <!-- Seletor segmentado do sensor exibido -->
+          <div class="seletor-sensores" role="group" aria-label="Sensor exibido no gráfico">
+            <button type="button" class="btn-sensor-tab ativo" data-sensor="temperatura" aria-pressed="true">
+              <svg class="ico"><use href="#i-temp"/></svg>
+              <span>Temperatura</span>
+            </button>
+            <button type="button" class="btn-sensor-tab" data-sensor="umidade" aria-pressed="false">
+              <svg class="ico"><use href="#i-gota"/></svg>
+              <span>Umidade</span>
+            </button>
+            <button type="button" class="btn-sensor-tab" data-sensor="luminosidade" aria-pressed="false">
+              <svg class="ico"><use href="#i-luz"/></svg>
+              <span>Luminosidade</span>
+            </button>
+            <select id="sensor-grafico" hidden>
+              <option value="temperatura">Temperatura</option>
+              <option value="umidade">Umidade</option>
+              <option value="luminosidade">Luminosidade</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Estatísticas do Gráfico (KPIs rápidos) -->
+        <div class="grafico-kpis" aria-label="Estatísticas do histórico">
+          <div class="kpi-mini">
+            <span class="kpi-legenda">Atual</span>
+            <strong class="kpi-valor" id="graf-kpi-atual">--</strong>
+          </div>
+          <div class="kpi-mini">
+            <span class="kpi-legenda">Mínima</span>
+            <strong class="kpi-valor" id="graf-kpi-min">--</strong>
+          </div>
+          <div class="kpi-mini">
+            <span class="kpi-legenda">Média</span>
+            <strong class="kpi-valor" id="graf-kpi-med">--</strong>
+          </div>
+          <div class="kpi-mini">
+            <span class="kpi-legenda">Máxima</span>
+            <strong class="kpi-valor" id="graf-kpi-max">--</strong>
+          </div>
+          <div class="kpi-mini">
+            <span class="kpi-legenda">Tendência</span>
+            <strong class="kpi-valor kpi-tendencia" id="graf-kpi-tend">
+              <span id="graf-kpi-tend-texto">Estável</span>
+            </strong>
+          </div>
+        </div>
+
+        <!-- Área do Canvas com Curva Suave e Tooltip Flutuante -->
+        <div class="grafico-canvas-wrapper" id="grafico-wrapper">
+          <canvas class="grafico" id="grafico-sensor" role="img" aria-label="Gráfico de telemetria do sensor selecionado com curvas suaves e dados históricos">Gráfico de telemetria.</canvas>
+          <div id="grafico-tooltip" class="grafico-tooltip" hidden></div>
+        </div>
+
+        <div class="grafico-rodape">
+          <div class="grafico-legenda-eixos">
+            <span class="legenda-item"><span class="linha-amostra"></span> Curva suavizada com área gradiente</span>
+            <span class="legenda-item"><span class="ponto-amostra"></span> Passe o cursor sobre o gráfico para detalhes</span>
+          </div>
+          <div class="linha-botoes">
+            <button class="btn" id="btn-baixar"><svg class="ico"><use href="#i-baixar"/></svg>Baixar histórico (Excel)</button>
+            <button class="btn" id="btn-limpar"><svg class="ico"><use href="#i-lixo"/></svg>Limpar histórico</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ABA CONTROLES -->
+    <section class="aba" id="aba-controles" role="tabpanel" aria-labelledby="aba-btn-controles" hidden>
+      <h2>Controles da sala</h2>
+      <div class="linha-botoes">
+        <label class="linha" for="modo-auto"><input type="checkbox" id="modo-auto">Modo automático</label>
+        <button class="btn primario" id="btn-desligar-tudo"><svg class="ico"><use href="#i-power"/></svg>Desligar tudo (sem aula)</button>
+      </div>
+      <div class="duas-colunas">
+        <div class="card">
+          <h3><svg class="ico"><use href="#i-neve"/></svg>Ar-condicionado</h3>
+          <span class="pill off" id="pill-ar"></span>
+          <div><button class="btn" id="btn-ar">Ligar/Desligar ar</button></div>
+        </div>
+        <div class="card">
+          <h3><svg class="ico"><use href="#i-luz"/></svg>Luz</h3>
+          <span class="pill off" id="pill-luz"></span>
+          <div><button class="btn" id="btn-luz">Ligar/Desligar luz</button></div>
+        </div>
+      </div>
+      <h4>Últimos eventos</h4>
+      <div id="lista-eventos"></div>
+    </section>
+
+    <!-- ABA VERIFICAÇÃO -->
+    <section class="aba" id="aba-verificacao" role="tabpanel" aria-labelledby="aba-btn-verificacao" hidden>
+      <div class="grafico-container-card">
+        <div class="grafico-topo">
+          <div class="grafico-titulos">
+            <h2>Verificação de Pessoas</h2>
+            <div class="grafico-status-badge">
+              <span class="ponto-ao-vivo" aria-hidden="true"></span>
+              <span>Detecção e histórico de ocupação da sala</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="card metrica metrica-pessoas">
+          <div class="rotulo"><svg class="ico"><use href="#i-users"/></svg>Pessoas nesta sala</div>
+          <div class="valor" id="m-pessoas">--</div>
+          <div class="delta" id="m-pessoas-delta"></div>
+        </div>
+
+        <div class="grafico-canvas-wrapper" id="grafico-pessoas-wrapper">
+          <canvas class="grafico" id="grafico-pessoas" role="img" aria-label="Gráfico do histórico de pessoas na sala">Gráfico do histórico de pessoas na sala.</canvas>
+          <div id="grafico-pessoas-tooltip" class="grafico-tooltip" hidden></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ABA CONFIGURAÇÕES -->
+    <section class="aba" id="aba-config" role="tabpanel" aria-labelledby="aba-btn-config" hidden>
+      <h2>Configurações</h2>
+      <div class="card config">
+        <p class="legenda">Ajuste as regras da automação sem mexer no código.</p>
+        <label for="temp-alta">Temperatura para ligar o ar (°C): <b id="temp-alta-valor">28</b></label>
+        <input type="range" id="temp-alta" min="20" max="32" value="28">
+        <label for="lux-baixa">Luminosidade para ligar a luz (%): <b id="lux-baixa-valor">40</b></label>
+        <input type="range" id="lux-baixa" min="10" max="80" value="40">
+        <label class="linha" for="auto-refresh"><input type="checkbox" id="auto-refresh">Atualização automática</label>
+        <label for="intervalo">Intervalo (segundos): <b id="intervalo-valor">5</b></label>
+        <input type="range" id="intervalo" min="2" max="30" value="5" disabled>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+</body>
 </html>
