@@ -1006,6 +1006,18 @@ canvas.grafico {
   min-width: 0;
 }
 
+/* Estrutura usada pelos recursos adicionais de voz do app.js. */
+.voz-cabecalho {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 12px;
+}
+
+.voz-cabecalho .voz-identidade {
+  flex: 1;
+}
+
 .voz-icone-principal {
   position: relative;
   display: grid;
@@ -1107,6 +1119,42 @@ canvas.grafico {
   padding: 4px 18px;
   border-left: 1px solid var(--borda);
   border-right: 1px solid var(--borda);
+}
+
+.voz-modo-continuo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 1px solid var(--borda);
+  border-radius: var(--raio-sm);
+  color: var(--suave);
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.voz-fechar {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--borda);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--suave);
+  font: inherit;
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.voz-fechar:hover,
+.voz-fechar:focus-visible {
+  color: var(--ruim);
+  border-color: currentColor;
 }
 
 .voz-transcricao-saida {
@@ -1406,5 +1454,38 @@ canvas.grafico {
   .conteudo {
     padding: 1rem;
     padding-bottom: 1rem;
+  }
+
+  .grafico-container-card {
+    padding: 16px;
+  }
+
+  .grafico-topo,
+  .grafico-rodape {
+    align-items: stretch;
+  }
+
+  .seletor-sensores {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .btn-sensor-tab {
+    justify-content: center;
+    padding: 8px 6px;
+    font-size: 0.74rem;
+  }
+
+  .grafico-legenda-eixos {
+    gap: 8px;
+  }
+
+  .legenda-item {
+    font-size: 0.7rem;
+  }
+
+  .linha-botoes .btn {
+    width: 100%;
   }
 }
