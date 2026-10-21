@@ -1702,3 +1702,985 @@ function iniciar() {
 }
 
 document.addEventListener("DOMContentLoaded", iniciar);
+// ==========================================
+// AJUSTES DO ASSISTENTE DE VOZ (ADICIONAL)
+// Bloco independente: não altera nenhuma função acima.
+// Adiciona o visual do widget (CSS), o indicador animado e os
+// estados: ativo, detectando-voz e falando-resposta.
+// ==========================================
+
+const VOZ_WIDGET_CSS = `
+/* Componente independente do assistente de voz. */
+.voz-widget {
+    position: fixed;
+    right: max(1rem, env(safe-area-inset-right));
+    bottom: max(1rem, env(safe-area-inset-bottom));
+    z-index: 1000;
+    box-sizing: border-box;
+    width: min(24rem, calc(100vw - 2rem));
+    padding: .85rem;
+    display: flex;
+    flex-direction: column;
+    gap: .65rem;
+    color: var(--texto, #e8f1ff);
+    background: color-mix(in srgb, var(--superficie-elevada, #101d2e) 94%, transparent);
+    border: 1px solid var(--borda-forte, #34455d);
+    border-radius: var(--raio-md, .9rem);
+    box-shadow: var(--sombra-elevada, 0 16px 45px rgba(0, 0, 0, .35));
+    backdrop-filter: blur(16px);
+    font-family: inherit;
+    transition: border-color .2s ease, box-shadow .2s ease;
+}
+
+/* Mantém o funcionamento do atributo hidden usado por alternarPainelVoz(). */
+.voz-widget[hidden] { display: none; }
+
+.voz-widget.ativo { border-color: rgba(50, 140, 255, .55); }
+.voz-widget.detectando-voz { border-color: rgba(61, 220, 151, .7); box-shadow: 0 0 30px rgba(61, 220, 151, .22); }
+.voz-widget.falando-resposta { border-color: rgba(246, 185, 78, .7); box-shadow: 0 0 28px rgba(246, 185, 78, .2); }
+.voz-cabecalho { display: flex; min-width: 0; align-items: center; gap: .75rem; }
+.voz-identidade { display: grid; min-width: 0; flex: 1; }
+.voz-identidade strong { font-size: .74rem; }
+#voz-status { overflow: hidden; color: var(--texto-suave, #9aabc0); font-size: .65rem; text-overflow: ellipsis; white-space: nowrap; }
+
+.voz-indicador-container {
+    position: relative;
+    width: 2.8rem;
+    height: 2.8rem;
+    flex: 0 0 2.8rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    perspective: 120px;
+    transform-style: preserve-3d;
+}
+.voz-indicador-onda { position: absolute; inset: 0; border-radius: 50%; opacity: 0; pointer-events: none; }
+.voz-indicador-onda-interna { inset: .35rem; animation-delay: -.55s !important; }
+.voz-indicador {
+    position: relative;
+    z-index: 2;
+    width: 1.2rem;
+    height: 1.2rem;
+    color: var(--texto-suave, #8fa1b8);
+    background: radial-gradient(circle at 32% 26%, #fff 0 5%, transparent 19%),
+        radial-gradient(circle at 38% 32%, color-mix(in srgb, currentColor 35%, white), currentColor 68%, #07172b 125%);
+    border-radius: 50%;
+    box-shadow: inset -.18rem -.2rem .35rem rgba(0, 5, 20, .5), inset .15rem .15rem .3rem rgba(255,255,255,.48), 0 0 0 3px rgba(120,140,170,.2), 0 .35rem .7rem rgba(0,7,22,.5);
+    transform: translateZ(14px);
+}
+.voz-widget.ativo .voz-indicador { color: var(--marca-brilho, #69d5ff); }
+.voz-widget.detectando-voz .voz-indicador { color: var(--sucesso, #3ddc97); animation: voz-nucleo .72s ease-in-out infinite; }
+.voz-widget.falando-resposta .voz-indicador { color: var(--aviso, #f6b94e); animation: voz-nucleo .82s ease-in-out infinite; }
+.voz-widget.detectando-voz .voz-indicador-onda { opacity: 1; background: radial-gradient(circle, rgba(61,220,151,.48), transparent 70%); animation: voz-onda 1.05s ease-out infinite; }
+.voz-widget.falando-resposta .voz-indicador-onda { opacity: 1; background: radial-gradient(circle, rgba(246,185,78,.4), transparent 70%); animation: voz-onda 1.15s ease-out infinite; }
+.voz-equalizador { position: absolute; z-index: 4; display: flex; align-items: center; gap: 2px; height: 1.35rem; opacity: 0; transform: translateZ(24px); }
+.voz-equalizador i { width: 2px; height: 70%; border-radius: 1rem; background: #efffff; }
+.detectando-voz .voz-equalizador, .falando-resposta .voz-equalizador { opacity: 1; }
+.detectando-voz .voz-equalizador i, .falando-resposta .voz-equalizador i { animation: voz-barra .58s ease-in-out infinite alternate; }
+.voz-equalizador i:nth-child(2) { animation-delay: -.31s !important; }
+.voz-equalizador i:nth-child(3) { animation-delay: -.48s !important; }
+.voz-equalizador i:nth-child(4) { animation-delay: -.17s !important; }
+.voz-equalizador i:nth-child(5) { animation-delay: -.39s !important; }
+
+#btn-voz { min-height: 2.2rem; padding: .45rem .75rem; color: inherit; background: var(--marca-suave, rgba(50,140,255,.15)); border: 1px solid rgba(50,140,255,.35); border-radius: .65rem; font: inherit; font-size: .7rem; font-weight: 700; cursor: pointer; }
+#btn-voz.ativo { color: var(--perigo, #ff6b76); border-color: currentColor; }
+#btn-voz:disabled { cursor: not-allowed; opacity: .5; }
+.voz-modo-continuo { display: flex; align-items: center; gap: .5rem; padding: .4rem .6rem; color: var(--texto-secundario, #bac7d8); background: var(--superficie-input, rgba(0,0,0,.12)); border-radius: .55rem; font-size: .68rem; }
+.voz-transcricao { display: grid; grid-template-columns: auto minmax(0,1fr); gap: .55rem; padding-top: .45rem; color: var(--texto-suave, #9aabc0); border-top: 1px solid var(--borda, #2b3a4e); font-size: .62rem; }
+#voz-texto { overflow: hidden; color: var(--texto-secundario, #bac7d8); text-overflow: ellipsis; white-space: nowrap; }
+
+@keyframes voz-nucleo { 0%,100% { transform: translateZ(14px) scale(.92); } 50% { transform: translateZ(23px) scale(1.2); } }
+@keyframes voz-onda { 0% { transform: rotateX(64deg) scale(.62); opacity: .95; } 70% { transform: rotateX(64deg) scale(1.65); opacity: .15; } 100% { transform: rotateX(64deg) scale(2.15); opacity: 0; } }
+@keyframes voz-barra { 0% { transform: scaleY(.35); } 45% { transform: scaleY(1.15); } 100% { transform: scaleY(.62); } }
+
+@media (max-width: 440px) { .voz-widget { right: .65rem; bottom: .65rem; width: calc(100vw - 1.3rem); } .voz-identidade strong { display: none; } }
+@media (prefers-reduced-motion: reduce) { .voz-widget *, .voz-widget *::before, .voz-widget *::after { animation: none !important; transition: none !important; } .voz-equalizador { display: none; } }
+`;
+
+const vozWidgetEstados = {
+  widget: null,
+  botao: null,
+  temporizadorSilencio: null,
+  falandoResposta: false
+};
+
+function injetarEstilosVozWidget() {
+  if (document.getElementById("voz-widget-estilos")) return;
+
+  const estilo = document.createElement("style");
+  estilo.id = "voz-widget-estilos";
+  estilo.textContent = VOZ_WIDGET_CSS;
+  document.head.appendChild(estilo);
+}
+
+function garantirIndicadorVozWidget(widget) {
+  if (widget.querySelector(".voz-indicador-container")) return;
+
+  const container = document.createElement("div");
+  container.className = "voz-indicador-container";
+  container.setAttribute("aria-hidden", "true");
+  container.innerHTML =
+    '<span class="voz-indicador-onda"></span>' +
+    '<span class="voz-indicador-onda voz-indicador-onda-interna"></span>' +
+    '<span class="voz-indicador"></span>' +
+    '<span class="voz-equalizador"><i></i><i></i><i></i><i></i><i></i></span>';
+
+  const cabecalho = widget.querySelector(".voz-cabecalho") || widget;
+  cabecalho.insertBefore(container, cabecalho.firstChild);
+}
+
+function atualizarEstadoVozWidget() {
+  const { widget, botao } = vozWidgetEstados;
+  if (!widget) return;
+
+  const ativo = Boolean(
+    controleVoz && (controleVoz.ativo || controleVoz.iniciando)
+  );
+
+  widget.classList.toggle("ativo", ativo);
+  if (botao) botao.classList.toggle("ativo", Boolean(controleVoz && controleVoz.ativo));
+
+  // Ao encerrar o microfone, a detecção de voz também termina.
+  if (!ativo) widget.classList.remove("detectando-voz");
+
+  widget.classList.toggle("falando-resposta", vozWidgetEstados.falandoResposta);
+}
+
+function marcarVozDetectada() {
+  const { widget } = vozWidgetEstados;
+  if (!widget || !controleVoz || !controleVoz.ativo) return;
+
+  widget.classList.add("detectando-voz");
+  clearTimeout(vozWidgetEstados.temporizadorSilencio);
+  vozWidgetEstados.temporizadorSilencio = setTimeout(() => {
+    widget.classList.remove("detectando-voz");
+  }, 900);
+}
+
+function definirFalandoRespostaVoz(falando) {
+  vozWidgetEstados.falandoResposta = falando;
+  atualizarEstadoVozWidget();
+}
+
+function observarRespostaFalada() {
+  if (!("speechSynthesis" in window)) return;
+  if (window.speechSynthesis.__vozWidgetObservado) return;
+
+  try {
+    const falarOriginal = window.speechSynthesis.speak.bind(window.speechSynthesis);
+
+    window.speechSynthesis.speak = (fala) => {
+      fala.addEventListener("start", () => definirFalandoRespostaVoz(true));
+      fala.addEventListener("end", () => definirFalandoRespostaVoz(false));
+      fala.addEventListener("error", () => definirFalandoRespostaVoz(false));
+      return falarOriginal(fala);
+    };
+
+    window.speechSynthesis.__vozWidgetObservado = true;
+  } catch (erro) {
+    console.warn("Não foi possível observar a resposta falada.", erro);
+  }
+}
+
+function aprimorarWidgetVoz() {
+  const widget = $("voz-widget");
+  if (!widget) return;
+
+  injetarEstilosVozWidget();
+  garantirIndicadorVozWidget(widget);
+
+  vozWidgetEstados.widget = widget;
+  vozWidgetEstados.botao = $("btn-voz");
+
+  const observador = new MutationObserver(atualizarEstadoVozWidget);
+
+  // O status e o aria-pressed do botão são atualizados a cada mudança do microfone.
+  const status = $("voz-status");
+  if (status) {
+    observador.observe(status, { childList: true, characterData: true, subtree: true });
+  }
+  if (vozWidgetEstados.botao) {
+    observador.observe(vozWidgetEstados.botao, {
+      attributes: true,
+      attributeFilter: ["aria-pressed", "disabled"]
+    });
+  }
+
+  // A transcrição em tempo real indica que há voz sendo captada.
+  const transcricao = $("voz-texto");
+  if (transcricao) {
+    new MutationObserver(marcarVozDetectada).observe(transcricao, {
+      childList: true,
+      characterData: true,
+      subtree: true
+    });
+  }
+
+  observarRespostaFalada();
+  atualizarEstadoVozWidget();
+}
+
+// Registrado depois do listener de iniciar(), então roda após configurarVoz().
+document.addEventListener("DOMContentLoaded", aprimorarWidgetVoz);
+
+// ==========================================
+// VOZ FALADA, CONVERSA CONTÍNUA E BOTÃO FECHAR (ADICIONAL)
+// Bloco independente: não altera o código-fonte das funções acima.
+// Usa apenas a instância controleVoz já criada por configurarVoz().
+// ==========================================
+
+const VOZ_CONVERSA_CSS = `
+.voz-fechar { flex: 0 0 auto; width: 1.9rem; height: 1.9rem; display: inline-flex; align-items: center; justify-content: center; padding: 0; color: var(--texto-suave, #9aabc0); background: transparent; border: 1px solid var(--borda, #2b3a4e); border-radius: .55rem; font: inherit; font-size: 1.05rem; line-height: 1; cursor: pointer; }
+.voz-fechar:hover, .voz-fechar:focus-visible { color: var(--perigo, #ff6b76); border-color: currentColor; }
+.voz-fechar-solto { position: absolute; top: .5rem; right: .5rem; }
+.voz-modo-continuo { justify-content: space-between; cursor: pointer; }
+.voz-alavanca { appearance: none; -webkit-appearance: none; position: relative; flex: 0 0 auto; width: 2.3rem; height: 1.25rem; margin: 0; border: 0; border-radius: 999px; background: rgba(120, 140, 170, .4); cursor: pointer; transition: background .2s ease; }
+.voz-alavanca::after { content: ""; position: absolute; top: .15rem; left: .15rem; width: .95rem; height: .95rem; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .4); transition: transform .2s ease; }
+.voz-alavanca:checked { background: var(--sucesso, #3ddc97); }
+.voz-alavanca:checked::after { transform: translateX(1.05rem); }
+.voz-alavanca:focus-visible { outline: 2px solid var(--marca-brilho, #69d5ff); outline-offset: 2px; }
+`;
+
+const VOZ_PERGUNTA_FINAL = " Mais alguma coisa?";
+
+const VOZ_RESPOSTAS = {
+  ligar_ar: "O ar-condicionado está ativado.",
+  desligar_ar: "O ar-condicionado está desativado.",
+  ligar_luz: "A luz está acesa.",
+  desligar_luz: "A luz está apagada.",
+  ligar_modo_auto: "O modo automático está ativado.",
+  desligar_modo_auto: "O modo automático está desativado.",
+  ligar_atualizacao: "A atualização automática está ativada.",
+  desligar_atualizacao: "A atualização automática está desativada.",
+  desligar_tudo: "Todos os equipamentos foram desligados.",
+  baixar_historico: "O histórico está sendo baixado.",
+  limpar_historico: "O histórico foi limpo.",
+  simular: "Fiz uma nova leitura dos sensores."
+};
+
+const VOZ_FRASES_FIM = /^(nao|nada|nada mais|nao obrigad[oa]|obrigad[oa]|so isso|e so isso|isso e tudo|tchau|ate logo|encerrar|encerrar conversa|pode encerrar|nao quero mais nada)$/;
+const VOZ_FRASES_CONTINUAR = /^(sim|tenho|quero|pode ser)$/;
+
+const vozConversa = {
+  ligada: false,
+  falando: false,
+  idFala: 0,
+  pararPedido: false,
+  silencios: 0,
+  ultimoErro: null,
+  respondeuFinal: false,
+  silencioAte: 0,
+  ecoAte: 0,
+  palavrasFala: new Set(),
+  alavanca: null,
+  chaveSalva: "vozConversaContinua"
+};
+
+function normalizarFalaVoz(texto) {
+  return String(texto)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Prefere a Francisca (voz Microsoft pt-BR do Edge/Windows) e,
+// se ela não existir no navegador, usa a voz do Google pt-BR.
+function escolherVozAssistente() {
+  if (!("speechSynthesis" in window)) return null;
+
+  const vozes = window.speechSynthesis.getVoices();
+
+  return (
+    vozes.find((v) => /francisca/i.test(v.name)) ||
+    vozes.find((v) => /google/i.test(v.name) && /^pt[-_]BR$/i.test(v.lang)) ||
+    vozes.find((v) => /^pt[-_]BR$/i.test(v.lang)) ||
+    vozes.find((v) => /^pt/i.test(v.lang)) ||
+    null
+  );
+}
+
+function cancelarFalaVoz() {
+  vozConversa.idFala += 1;
+  vozConversa.falando = false;
+  if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+}
+
+function reiniciarEscutaVoz() {
+  const widget = $("voz-widget");
+
+  if (!vozConversa.ligada || vozConversa.pararPedido || vozConversa.falando) return;
+  if (!widget || widget.hidden || !controleVoz) return;
+  if (!controleVoz.ativo && !controleVoz.iniciando) controleVoz.iniciar();
+}
+
+// Ignora tudo que o microfone captar enquanto o assistente fala, logo depois
+// que ele termina (reverberação) e frases formadas só por palavras que o
+// próprio assistente acabou de dizer (eco do alto-falante).
+function resultadoEhEcoVoz(evento) {
+  if (vozConversa.falando) return true;
+
+  const agora = Date.now();
+  if (agora < vozConversa.silencioAte) return true;
+
+  if (agora < vozConversa.ecoAte) {
+    const texto = Array.from(evento.results)
+      .map((resultado) => resultado[0].transcript)
+      .join(" ");
+    const palavras = normalizarFalaVoz(texto).split(" ").filter(Boolean);
+
+    if (palavras.length && palavras.every((p) => vozConversa.palavrasFala.has(p))) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function falarVoz(texto) {
+  const id = ++vozConversa.idFala;
+
+  // Marca como "falando" desde já, para o microfone não aproveitar a própria resposta.
+  vozConversa.falando = true;
+  vozConversa.palavrasFala = new Set(normalizarFalaVoz(texto).split(" "));
+
+  if (!("speechSynthesis" in window)) {
+    vozConversa.falando = false;
+    setTimeout(reiniciarEscutaVoz, 250);
+    return;
+  }
+
+  const falar = () => {
+    if (id !== vozConversa.idFala) return; // substituída por uma fala mais nova
+
+    window.speechSynthesis.cancel();
+
+    const fala = new SpeechSynthesisUtterance(texto);
+    const voz = escolherVozAssistente();
+    fala.lang = "pt-BR";
+    if (voz) fala.voice = voz;
+    fala.rate = 1;
+    fala.pitch = 1;
+
+    let tentativas = 0;
+    const terminou = () => {
+      if (id !== vozConversa.idFala) return; // fala antiga cancelada
+
+      // Algumas vozes online avisam o fim antes de o áudio acabar.
+      if (window.speechSynthesis.speaking && tentativas < 40) {
+        tentativas += 1;
+        setTimeout(terminou, 150);
+        return;
+      }
+
+      vozConversa.falando = false;
+      const agora = Date.now();
+      vozConversa.silencioAte = agora + 500;
+      vozConversa.ecoAte = agora + 4000;
+
+      // Conversa contínua: volta a ouvir só depois de a voz sumir da sala.
+      setTimeout(reiniciarEscutaVoz, 700);
+    };
+    fala.onend = terminou;
+    fala.onerror = terminou;
+
+    window.speechSynthesis.speak(fala);
+  };
+
+  // O microfone precisa estar desligado antes de o assistente começar a falar.
+  if (controleVoz && (controleVoz.ativo || controleVoz.iniciando)) {
+    let jaFalou = false;
+    const falarUmaVez = () => {
+      if (jaFalou) return;
+      jaFalou = true;
+      falar();
+    };
+
+    controleVoz.reconhecimento.addEventListener("end", falarUmaVez, { once: true });
+    setTimeout(falarUmaVez, 700); // garantia, caso o evento "end" não chegue
+
+    try {
+      controleVoz.reconhecimento.stop();
+    } catch (erro) {
+      falarUmaVez();
+    }
+  } else {
+    falar();
+  }
+}
+
+function definirConversaVoz(ligada) {
+  vozConversa.ligada = ligada;
+  vozConversa.silencios = 0;
+  if (vozConversa.alavanca) vozConversa.alavanca.checked = ligada;
+
+  try {
+    localStorage.setItem(vozConversa.chaveSalva, ligada ? "1" : "0");
+  } catch (erro) {
+    console.warn("Não foi possível salvar a conversa contínua.", erro);
+  }
+}
+
+function fecharPainelVoz() {
+  const widget = $("voz-widget");
+  const botaoToggle = $("btn-toggle-voz");
+  if (!widget || widget.hidden) return;
+
+  if (botaoToggle) {
+    botaoToggle.click(); // usa o mesmo caminho do botão de abrir/fechar
+  } else {
+    widget.hidden = true;
+    if (controleVoz) controleVoz.parar();
+  }
+
+  cancelarFalaVoz();
+}
+
+function garantirBotaoFecharVoz(widget) {
+  if (widget.querySelector(".voz-fechar")) return;
+
+  const botao = document.createElement("button");
+  botao.type = "button";
+  botao.className = "voz-fechar";
+  botao.title = "Fechar";
+  botao.setAttribute("aria-label", "Fechar assistente de voz");
+  botao.textContent = "\u00d7";
+  botao.addEventListener("click", fecharPainelVoz);
+
+  const cabecalho = widget.querySelector(".voz-cabecalho");
+  if (cabecalho) {
+    cabecalho.appendChild(botao);
+  } else {
+    botao.classList.add("voz-fechar-solto");
+    widget.appendChild(botao);
+  }
+}
+
+function garantirAlavancaConversaVoz(widget) {
+  let alavanca = widget.querySelector(".voz-modo-continuo input[type='checkbox']");
+
+  if (!alavanca) {
+    const rotulo = document.createElement("label");
+    rotulo.className = "voz-modo-continuo";
+
+    const texto = document.createElement("span");
+    texto.textContent = "Conversa contínua";
+
+    alavanca = document.createElement("input");
+    alavanca.type = "checkbox";
+    alavanca.id = "voz-conversa-continua";
+    alavanca.setAttribute("role", "switch");
+
+    rotulo.htmlFor = alavanca.id;
+    rotulo.append(texto, alavanca);
+
+    const referencia = widget.querySelector(".voz-transcricao");
+    if (referencia && referencia.parentNode) {
+      referencia.parentNode.insertBefore(rotulo, referencia);
+    } else {
+      widget.appendChild(rotulo);
+    }
+  }
+
+  alavanca.classList.add("voz-alavanca");
+  return alavanca;
+}
+
+function instalarComandosDeEncerramentoVoz() {
+  if (VozController.__conversaInstalada) return;
+
+  const identificarOriginal = VozController.identificarComando;
+
+  VozController.identificarComando = function (texto) {
+    const frase = normalizarFalaVoz(texto);
+    if (VOZ_FRASES_FIM.test(frase)) return "encerrar_conversa";
+    if (VOZ_FRASES_CONTINUAR.test(frase)) return "continuar_conversa";
+    return identificarOriginal.call(VozController, texto);
+  };
+
+  VozController.__conversaInstalada = true;
+}
+
+function aoFimReconhecimentoVoz() {
+  if (!vozConversa.ligada || vozConversa.pararPedido || vozConversa.falando) return;
+
+  // Houve fala final: a resposta falada é quem reinicia o ciclo.
+  if (vozConversa.respondeuFinal && "speechSynthesis" in window) return;
+
+  const erro = vozConversa.ultimoErro;
+  if (erro && erro !== "no-speech") {
+    definirConversaVoz(false);
+    return;
+  }
+
+  vozConversa.silencios += 1;
+  if (vozConversa.silencios > 2) {
+    definirConversaVoz(false);
+    falarVoz("Não ouvi nada, vou encerrar a conversa contínua.");
+    return;
+  }
+
+  setTimeout(reiniciarEscutaVoz, 350);
+}
+
+function aprimorarVozConversa() {
+  const widget = $("voz-widget");
+  if (!widget) return;
+
+  const estilo = document.createElement("style");
+  estilo.id = "voz-conversa-estilos";
+  estilo.textContent = VOZ_CONVERSA_CSS;
+  document.head.appendChild(estilo);
+
+  // 1. Botão para fechar o painel (também fecha com a tecla Esc).
+  garantirBotaoFecharVoz(widget);
+  document.addEventListener("keydown", (evento) => {
+    if (evento.key === "Escape" && !widget.hidden) fecharPainelVoz();
+  });
+
+  const botaoToggle = $("btn-toggle-voz");
+  if (botaoToggle) {
+    botaoToggle.addEventListener("click", () => {
+      if (widget.hidden) cancelarFalaVoz();
+    });
+  }
+
+  if (!controleVoz) return; // navegador sem reconhecimento de voz
+
+  // 3. Alavanca de conversa contínua.
+  vozConversa.alavanca = garantirAlavancaConversaVoz(widget);
+  try {
+    vozConversa.ligada = localStorage.getItem(vozConversa.chaveSalva) === "1";
+  } catch (erro) {
+    vozConversa.ligada = false;
+  }
+  vozConversa.alavanca.checked = vozConversa.ligada;
+
+  vozConversa.alavanca.addEventListener("change", () => {
+    const ligada = vozConversa.alavanca.checked;
+    definirConversaVoz(ligada);
+
+    if (ligada) {
+      vozConversa.pararPedido = false;
+      falarVoz("Conversa contínua ativada. Pode falar.");
+    } else {
+      falarVoz("Conversa contínua desativada.");
+    }
+  });
+
+  // Distingue parada manual (botão, fechar painel) de fim natural da escuta.
+  const iniciarOriginal = controleVoz.iniciar.bind(controleVoz);
+  controleVoz.iniciar = () => {
+    vozConversa.pararPedido = false;
+    iniciarOriginal();
+  };
+
+  const pararOriginal = controleVoz.parar.bind(controleVoz);
+  controleVoz.parar = () => {
+    vozConversa.pararPedido = true;
+    pararOriginal();
+  };
+
+  // 2. Respostas faladas para cada comando.
+  instalarComandosDeEncerramentoVoz();
+
+  const comandoOriginal = controleVoz.onCommand;
+  controleVoz.onCommand = (comando) => {
+    vozConversa.silencios = 0;
+
+    if (comando === "encerrar_conversa") {
+      definirConversaVoz(false);
+      falarVoz("Tudo bem! Até logo.");
+      return;
+    }
+
+    if (comando === "continuar_conversa") {
+      falarVoz("Pode falar.");
+      return;
+    }
+
+    // Modo automático ligado: ar e luz não podem ser desligados individualmente.
+    const bloqueio = VOZ_BLOQUEIOS_AUTO[comando];
+    if (bloqueio && estado.modoAuto) {
+      registrarEvento(`${bloqueio.nome} não pode ser ${bloqueio.desligado} no modo automático`);
+      desenhar();
+      falarVoz(
+        `O modo automático está ligado, então ${bloqueio.artigo} ${bloqueio.nome.toLowerCase()} ` +
+        `não pode ser ${bloqueio.desligado}. Diga desligar tudo para desligar o modo automático ` +
+        `e os equipamentos.` + VOZ_PERGUNTA_FINAL
+      );
+      return;
+    }
+
+    comandoOriginal.call(controleVoz, comando);
+    sincronizarModoAutoVoz();
+
+    const resposta = VOZ_RESPOSTAS[comando];
+    if (resposta) falarVoz(resposta + VOZ_PERGUNTA_FINAL);
+  };
+
+  const statusOriginal = controleVoz.onStatus;
+  controleVoz.onStatus = (mensagem) => {
+    statusOriginal.call(controleVoz, mensagem);
+
+    if (mensagem === "Comando não reconhecido") {
+      falarVoz("Não entendi o comando. Pode repetir?");
+    }
+  };
+
+  const reconhecimento = controleVoz.reconhecimento;
+  reconhecimento.addEventListener("start", () => {
+    vozConversa.ultimoErro = null;
+    vozConversa.respondeuFinal = false;
+  });
+  reconhecimento.addEventListener("error", (evento) => {
+    vozConversa.ultimoErro = evento.error;
+  });
+
+  // Descarta resultados que sejam a própria voz do assistente.
+  const resultadoOriginal = reconhecimento.onresult;
+  reconhecimento.onresult = (evento) => {
+    if (resultadoEhEcoVoz(evento)) return;
+    resultadoOriginal.call(reconhecimento, evento);
+  };
+
+  reconhecimento.addEventListener("result", (evento) => {
+    if (resultadoEhEcoVoz(evento)) return;
+    for (let i = evento.resultIndex || 0; i < evento.results.length; i += 1) {
+      if (evento.results[i].isFinal) vozConversa.respondeuFinal = true;
+    }
+  });
+  reconhecimento.addEventListener("end", aoFimReconhecimentoVoz);
+
+  // Carrega a lista de vozes do navegador (é preenchida de forma assíncrona).
+  if ("speechSynthesis" in window) window.speechSynthesis.getVoices();
+}
+
+// Registrado depois dos outros listeners, então roda após configurarVoz().
+document.addEventListener("DOMContentLoaded", aprimorarVozConversa);
+
+// ==========================================
+// ANIMAÇÃO AO ABRIR E FECHAR O PAINEL DE VOZ (ADICIONAL)
+// Bloco independente: não altera nenhuma função acima.
+// ==========================================
+
+const VOZ_ANIMACAO_CSS = `
+@keyframes voz-painel-entrar {
+    0% { opacity: 0; transform: scale(.82); }
+    60% { opacity: 1; transform: scale(1.05); }
+    100% { opacity: 1; transform: scale(1); }
+}
+@keyframes voz-painel-sair {
+    0% { opacity: 1; transform: scale(1); }
+    30% { opacity: 1; transform: scale(1.04); }
+    100% { opacity: 0; transform: scale(.8); }
+}
+@keyframes voz-botao-pop {
+    0%, 100% { transform: scale(1); }
+    40% { transform: scale(1.14); }
+    70% { transform: scale(.94); }
+}
+.voz-widget.voz-entrando { transform-origin: bottom right; animation: voz-painel-entrar .28s cubic-bezier(.2, .9, .3, 1.2) both; }
+.voz-widget.voz-saindo { transform-origin: bottom right; animation: voz-painel-sair .22s ease-in both; pointer-events: none; }
+.voz-botao-pop { animation: voz-botao-pop .3s ease; }
+@media (prefers-reduced-motion: reduce) {
+    .voz-widget.voz-entrando, .voz-widget.voz-saindo, .voz-botao-pop { animation: none; }
+}
+`;
+
+const vozAnimacao = { clone: null };
+
+function reduzirMovimentoVoz() {
+  return Boolean(
+    window.matchMedia &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  );
+}
+
+function reiniciarClasseAnimacaoVoz(elemento, classe) {
+  elemento.classList.remove(classe);
+  void elemento.offsetWidth; // força o navegador a reiniciar a animação
+  elemento.classList.add(classe);
+}
+
+function removerCloneSaidaVoz() {
+  if (vozAnimacao.clone) {
+    vozAnimacao.clone.remove();
+    vozAnimacao.clone = null;
+  }
+}
+
+function aprimorarAnimacaoPainelVoz() {
+  const widget = $("voz-widget");
+  const botaoToggle = $("btn-toggle-voz");
+  if (!widget || !botaoToggle) return;
+
+  const estilo = document.createElement("style");
+  estilo.id = "voz-animacao-estilos";
+  estilo.textContent = VOZ_ANIMACAO_CSS;
+  document.head.appendChild(estilo);
+
+  // Roda depois do clique original, quando o painel já abriu ou fechou.
+  botaoToggle.addEventListener("click", () => {
+    if (reduzirMovimentoVoz()) return;
+
+    reiniciarClasseAnimacaoVoz(botaoToggle, "voz-botao-pop");
+    setTimeout(() => botaoToggle.classList.remove("voz-botao-pop"), 350);
+
+    removerCloneSaidaVoz();
+
+    // Abrindo: o painel cresce com um pequeno "pop".
+    if (!widget.hidden) {
+      reiniciarClasseAnimacaoVoz(widget, "voz-entrando");
+      setTimeout(() => widget.classList.remove("voz-entrando"), 320);
+      return;
+    }
+
+    // Fechando: o painel original já está oculto, então uma cópia visual
+    // (sem interação) faz a animação de saída e some em seguida.
+    const copia = widget.cloneNode(true);
+    copia.hidden = false;
+    copia.setAttribute("aria-hidden", "true");
+    copia.setAttribute("inert", "");
+    copia.classList.remove("voz-entrando");
+    copia.classList.add("voz-saindo");
+    document.body.appendChild(copia);
+    vozAnimacao.clone = copia;
+
+    setTimeout(() => {
+      if (vozAnimacao.clone === copia) removerCloneSaidaVoz();
+    }, 240);
+  });
+}
+
+document.addEventListener("DOMContentLoaded", aprimorarAnimacaoPainelVoz);
+
+// ==========================================
+// PAINEL DE VOZ COMPACTO E MINIMALISTA (ADICIONAL)
+// Bloco independente: só reduz o tamanho visual do widget.
+// ==========================================
+
+const VOZ_COMPACTO_CSS = `
+.voz-widget {
+    width: min(17rem, calc(100vw - 2rem));
+    padding: .6rem .7rem;
+    gap: .4rem;
+    border-radius: var(--raio-sm, .7rem);
+    box-shadow: var(--sombra-elevada, 0 8px 24px rgba(0, 0, 0, .28));
+}
+.voz-cabecalho { gap: .5rem; }
+.voz-identidade strong { font-size: .68rem; }
+#voz-status { font-size: .6rem; }
+
+.voz-indicador-container { width: 2.1rem; height: 2.1rem; flex: 0 0 2.1rem; }
+.voz-indicador { width: .9rem; height: .9rem; box-shadow: inset -.14rem -.16rem .28rem rgba(0, 5, 20, .5), inset .12rem .12rem .24rem rgba(255, 255, 255, .48), 0 0 0 2px rgba(120, 140, 170, .2), 0 .25rem .5rem rgba(0, 7, 22, .45); }
+.voz-indicador-onda-interna { inset: .25rem; }
+.voz-equalizador { height: 1rem; }
+
+#btn-voz { min-height: 1.8rem; padding: .3rem .6rem; border-radius: .55rem; font-size: .66rem; }
+.voz-fechar { width: 1.6rem; height: 1.6rem; border-radius: .5rem; font-size: .95rem; }
+
+.voz-modo-continuo { gap: .4rem; padding: .25rem .5rem; border-radius: .5rem; font-size: .62rem; }
+.voz-alavanca { width: 1.9rem; height: 1.05rem; }
+.voz-alavanca::after { top: .125rem; left: .125rem; width: .8rem; height: .8rem; }
+.voz-alavanca:checked::after { transform: translateX(.85rem); }
+
+.voz-transcricao { gap: .4rem; padding-top: .3rem; font-size: .58rem; }
+
+@media (max-width: 440px) {
+    .voz-widget { width: min(17rem, calc(100vw - 1.3rem)); }
+}
+`;
+
+function aplicarPainelVozCompacto() {
+  if (!$("voz-widget")) return;
+  if (document.getElementById("voz-compacto-estilos")) return;
+
+  const estilo = document.createElement("style");
+  estilo.id = "voz-compacto-estilos";
+  estilo.textContent = VOZ_COMPACTO_CSS;
+  document.head.appendChild(estilo); // por último, para prevalecer sobre os estilos anteriores
+}
+
+document.addEventListener("DOMContentLoaded", aplicarPainelVozCompacto);
+
+// ==========================================
+// CORREÇÃO DA ALAVANCA DE CONVERSA CONTÍNUA (ADICIONAL)
+// Evita a "bolinha dupla": o checkbox recebia a bolinha do estilo
+// geral de switches da página + a bolinha criada pelo bloco de voz.
+// Agora a alavanca é autossuficiente e desenha uma única bolinha
+// com background (sem ::before/::after).
+// ==========================================
+
+const VOZ_ALAVANCA_CSS = `
+.voz-widget input.voz-alavanca[type="checkbox"] {
+    all: unset !important;
+    display: inline-block !important;
+    box-sizing: border-box !important;
+    position: relative !important;
+    flex: 0 0 auto !important;
+    width: 1.9rem !important;
+    height: 1.05rem !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 999px !important;
+    cursor: pointer !important;
+    -webkit-appearance: none !important;
+    appearance: none !important;
+    background-color: rgba(120, 140, 170, .4) !important;
+    background-image: radial-gradient(circle, #fff 0, #fff 49%, transparent 52%) !important;
+    background-repeat: no-repeat !important;
+    background-size: .8rem .8rem !important;
+    background-position: .125rem center !important;
+    transition: background-color .2s ease, background-position .2s ease !important;
+}
+.voz-widget input.voz-alavanca[type="checkbox"]:checked {
+    background-color: var(--sucesso, #3ddc97) !important;
+    background-position: calc(100% - .125rem) center !important;
+}
+.voz-widget input.voz-alavanca[type="checkbox"]:focus-visible {
+    outline: 2px solid var(--marca-brilho, #69d5ff) !important;
+    outline-offset: 2px !important;
+}
+.voz-widget input.voz-alavanca[type="checkbox"]::before,
+.voz-widget input.voz-alavanca[type="checkbox"]::after {
+    content: none !important;
+    display: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+    .voz-widget input.voz-alavanca[type="checkbox"] { transition: none !important; }
+}
+`;
+
+function corrigirAlavancaConversaVoz() {
+  if (!$("voz-widget")) return;
+  if (document.getElementById("voz-alavanca-estilos")) return;
+
+  const estilo = document.createElement("style");
+  estilo.id = "voz-alavanca-estilos";
+  estilo.textContent = VOZ_ALAVANCA_CSS;
+  document.head.appendChild(estilo); // por último, para prevalecer
+}
+
+document.addEventListener("DOMContentLoaded", corrigirAlavancaConversaVoz);
+
+// ==========================================
+// MODO AUTOMÁTICO: AR E LUZ NÃO DESLIGAM SOZINHOS (ADICIONAL)
+// Com o modo automático ligado, ar e luz não podem ser desligados
+// pelos botões nem por voz ("desligar ar" / "desligar luz").
+// O caminho para desligar é "Desligar tudo", que também desliga o
+// modo automático. A própria automação continua gerenciando os dois.
+// ==========================================
+
+const VOZ_BLOQUEIOS_AUTO = {
+  desligar_ar: { nome: "Ar-condicionado", artigo: "o", desligado: "desligado" },
+  desligar_luz: { nome: "Luz", artigo: "a", desligado: "desligada" }
+};
+
+const BLOQUEIO_AUTO_TITULO = "Bloqueado no modo automático. Use “Desligar tudo”.";
+
+const VOZ_AUTO_CSS = `
+.bloqueado-auto { opacity: .6; cursor: not-allowed; }
+.voz-dica-auto { display: flex; align-items: center; justify-content: space-between; gap: .5rem; padding: .3rem .5rem; color: var(--aviso, #f6b94e); background: rgba(246, 185, 78, .1); border-radius: .5rem; font-size: .6rem; line-height: 1.3; }
+.voz-dica-auto[hidden] { display: none; }
+`;
+
+function sincronizarModoAutoVoz() {
+  const dica = $("voz-dica-auto");
+  if (dica && dica.hidden === estado.modoAuto) dica.hidden = !estado.modoAuto;
+
+  [["btn-ar", "arLigado"], ["btn-luz", "luzLigada"]].forEach(([id, chave]) => {
+    const botao = $(id);
+    if (!botao) return;
+
+    const bloqueado = estado.modoAuto && estado[chave];
+    botao.classList.toggle("bloqueado-auto", bloqueado);
+
+    if (bloqueado) {
+      if (botao.getAttribute("aria-disabled") !== "true") botao.setAttribute("aria-disabled", "true");
+      if (botao.title !== BLOQUEIO_AUTO_TITULO) botao.title = BLOQUEIO_AUTO_TITULO;
+    } else {
+      if (botao.hasAttribute("aria-disabled")) botao.removeAttribute("aria-disabled");
+      if (botao.title === BLOQUEIO_AUTO_TITULO) botao.removeAttribute("title");
+    }
+  });
+}
+
+function garantirDicaModoAutoVoz(widget) {
+  if ($("voz-dica-auto")) return;
+
+  const dica = document.createElement("div");
+  dica.id = "voz-dica-auto";
+  dica.className = "voz-dica-auto";
+  dica.hidden = true;
+
+  const texto = document.createElement("span");
+  texto.textContent = "Modo automático ligado: para desligar ar e luz, diga “desligar tudo”.";
+
+  dica.appendChild(texto);
+
+  const referencia = widget.querySelector(".voz-transcricao");
+  if (referencia && referencia.parentNode) {
+    referencia.parentNode.insertBefore(dica, referencia);
+  } else {
+    widget.appendChild(dica);
+  }
+}
+
+// Com o modo automático ligado, nada desliga ar e luz (nem a própria automação:
+// sala vazia, temperatura normal, luz suficiente). Só "desligar tudo" desliga,
+// e ele antes desliga o modo automático. A função original não é editada:
+// apenas é envolvida por uma verificação.
+function instalarBloqueioAutomacao() {
+  if (definir.__bloqueioAuto) return;
+
+  const definirOriginal = definir;
+
+  definir = function (chave, valor, motivo) {
+    if (estado.modoAuto && valor === false && motivo !== "desligar tudo") return;
+    return definirOriginal(chave, valor, motivo);
+  };
+
+  definir.__bloqueioAuto = true;
+}
+
+function aplicarBloqueioModoAuto() {
+  instalarBloqueioAutomacao();
+
+  const estilo = document.createElement("style");
+  estilo.id = "voz-auto-estilos";
+  estilo.textContent = VOZ_AUTO_CSS;
+  document.head.appendChild(estilo);
+
+  // Botões de ar e luz: impede desligar enquanto o modo automático estiver ligado.
+  [["btn-ar", "arLigado", "O ar-condicionado", "desligado"],
+   ["btn-luz", "luzLigada", "A luz", "desligada"]].forEach(([id, chave, nome, desligado]) => {
+    const botao = $(id);
+    if (!botao) return;
+
+    // Fase de captura: roda antes do clique original e o cancela.
+    botao.addEventListener("click", (evento) => {
+      if (!estado.modoAuto || !estado[chave]) return;
+
+      evento.stopImmediatePropagation();
+      evento.preventDefault();
+      registrarEvento(`${nome} não pode ser ${desligado} no modo automático (use Desligar tudo)`);
+      desenhar();
+      sincronizarModoAutoVoz();
+    }, true);
+  });
+
+  const widget = $("voz-widget");
+  if (widget) garantirDicaModoAutoVoz(widget);
+
+  const alternadorAuto = $("modo-auto");
+  if (alternadorAuto) alternadorAuto.addEventListener("change", sincronizarModoAutoVoz);
+
+  sincronizarModoAutoVoz();
+  setInterval(sincronizarModoAutoVoz, 400); // cobre mudanças vindas de voz, automação e botões
+}
+
+document.addEventListener("DOMContentLoaded", aplicarBloqueioModoAuto);
